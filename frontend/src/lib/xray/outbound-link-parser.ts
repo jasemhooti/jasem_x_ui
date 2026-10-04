@@ -834,10 +834,154 @@ export function parseWireguardLink(link: string): Raw | null {
   };
 }
 
+function lowerScheme(link: string): string {
+  const i = link.indexOf('://');
+  return i > 0 ? link.slice(0, i).toLowerCase() + link.slice(i) : link;
+}
+
+function proxyCredentials(url: URL): { user: string; pass: string } {
+  const user = decodeURIComponent(url.username);
+  const pass = decodeURIComponent(url.password);
+  if (pass || !user) return { user, pass };
+  try {
+    const decoded = atob(user.replace(/-/g, '+').replace(/_/g, '/'));
+    const i = decoded.indexOf(':');
+    if (i >= 0) return { user: decoded.slice(0, i), pass: decoded.slice(i + 1) };
+  } catch {
+    // not base64: plain username
+  }
+  return { user, pass: '' };
+}
+
+// socks:// and http(s):// proxy links. A bare http(s) URL without a port is
+// rejected so stray web links are not imported.
+export function parseProxyLink(link: string): Raw | null {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return null;
+  }
+  const scheme = url.protocol.replace(/:$/, '');
+  const isSocks = ['socks', 'socks5', 'socks5h'].includes(scheme);
+  if (!isSocks && scheme !== 'http' && scheme !== 'https') return null;
+  const explicitPort = /^[a-z0-9+.-]+:\/\/[^/?#]*:\d+(?=[/?#]|$)/i.test(link);
+  if (!url.hostname || (!isSocks && !explicitPort)) return null;
+  const { user, pass } = proxyCredentials(url);
+  const server: Raw = {
+    address: url.hostname.replace(/^\[|\]$/g, ''),
+    port: Number(url.port) || (scheme === 'https' ? 443 : 1080),
+    users: user || pass ? [{ user, pass }] : [],
+  };
+  const out: Raw = {
+    protocol: isSocks ? 'socks' : 'http',
+    tag: decodeRemark(url),
+    settings: { servers: [server] },
+  };
+  if (scheme === 'https') {
+    const stream = buildStream('tcp', 'tls');
+    (stream.tlsSettings as Raw).serverName = url.searchParams.get('sni') ?? url.hostname;
+    out.streamSettings = stream;
+  }
+  return out;
+}
+
+function singboxTls(params: URLSearchParams, host: string): Raw {
+  const tls: Raw = { enabled: true };
+  const sni = firstParam(params, 'sni', 'peer', 'servername') ?? host;
+  if (sni) tls.server_name = sni;
+  const insecure = (firstParam(params, 'insecure', 'allow_insecure', 'allowInsecure', 'skip-cert-verify') ?? '').toLowerCase();
+  if (insecure === '1' || insecure === 'true') tls.insecure = true;
+  const alpn = params.get('alpn');
+  if (alpn) tls.alpn = alpn.split(',').filter(Boolean);
+  const fp = params.get('fp');
+  if (fp) tls.utls = { enabled: true, fingerprint: fp };
+  return tls;
+}
+
+function leadingMbps(raw: string | null, fallback: number): number {
+  const n = parseInt(raw ?? '', 10);
+  return n > 0 ? n : fallback;
+}
+
+// tuic/hysteria(v1)/anytls/naive/ssh links become the sing-box pseudo-outbound
+// {protocol:'singbox', settings:{outbound:{...}}} that the panel bridges at runtime.
+export function parseSingboxLink(link: string): Raw | null {
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return null;
+  }
+  const scheme = url.protocol.replace(/:$/, '');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (!host) return null;
+  const p = url.searchParams;
+  const user = decodeURIComponent(url.username);
+  const pass = decodeURIComponent(url.password);
+  const ob: Raw = { server: host, server_port: Number(url.port) || 443 };
+  const withH3 = (tls: Raw): Raw => {
+    if (!tls.alpn) tls.alpn = ['h3'];
+    return tls;
+  };
+  switch (scheme) {
+    case 'tuic': {
+      ob.type = 'tuic';
+      ob.uuid = user;
+      ob.password = pass;
+      const cc = firstParam(p, 'congestion_control', 'congestion-controller', 'congestion');
+      if (cc) ob.congestion_control = cc;
+      const mode = firstParam(p, 'udp_relay_mode', 'udp-relay-mode');
+      if (mode) ob.udp_relay_mode = mode;
+      if (asBool(firstParam(p, 'udp_over_stream', 'udp-over-stream'))) ob.udp_over_stream = true;
+      if (asBool(firstParam(p, 'zero_rtt_handshake', 'reduce-rtt', 'reduce_rtt'))) ob.zero_rtt_handshake = true;
+      const hb = firstParam(p, 'heartbeat', 'heartbeat-interval');
+      if (hb) ob.heartbeat = hb;
+      ob.tls = withH3(singboxTls(p, host));
+      break;
+    }
+    case 'hysteria': {
+      const proto = (p.get('protocol') ?? '').toLowerCase();
+      if (proto && proto !== 'udp') return null;
+      ob.type = 'hysteria';
+      ob.up_mbps = leadingMbps(firstParam(p, 'upmbps', 'up'), 50);
+      ob.down_mbps = leadingMbps(firstParam(p, 'downmbps', 'down'), 100);
+      const auth = firstParam(p, 'auth', 'auth_str', 'auth-str') ?? user;
+      if (auth) ob.auth_str = auth;
+      const obfs = firstParam(p, 'obfsParam', 'obfs');
+      if (obfs) ob.obfs = obfs;
+      ob.tls = withH3(singboxTls(p, host));
+      break;
+    }
+    case 'anytls':
+      ob.type = 'anytls';
+      ob.password = pass || user;
+      ob.tls = singboxTls(p, host);
+      break;
+    case 'naive+https':
+      ob.type = 'naive';
+      ob.username = user;
+      ob.password = pass;
+      ob.tls = singboxTls(p, host);
+      break;
+    case 'ssh':
+      ob.type = 'ssh';
+      ob.server_port = Number(url.port) || 22;
+      ob.user = user;
+      if (pass) ob.password = pass;
+      if (p.get('private_key')) ob.private_key = p.get('private_key');
+      if (p.get('private_key_path')) ob.private_key_path = p.get('private_key_path');
+      break;
+    default:
+      return null;
+  }
+  return { protocol: 'singbox', tag: decodeRemark(url), settings: { outbound: ob } };
+}
+
 // Dispatcher — first non-null parser wins. Returns null when no parser
-// recognizes the link's protocol scheme.
+// recognizes the link's protocol scheme. Schemes are case-insensitive.
 export function parseOutboundLink(link: string): Raw | null {
-  const trimmed = link.trim();
+  const trimmed = lowerScheme(link.trim());
   if (!trimmed) return null;
   return (
     parseVmessLink(trimmed) ??
@@ -845,6 +989,8 @@ export function parseOutboundLink(link: string): Raw | null {
     parseTrojanLink(trimmed) ??
     parseShadowsocksLink(trimmed) ??
     parseHysteria2Link(trimmed) ??
-    parseWireguardLink(trimmed)
+    parseWireguardLink(trimmed) ??
+    parseProxyLink(trimmed) ??
+    parseSingboxLink(trimmed)
   );
 }

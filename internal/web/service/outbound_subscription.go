@@ -11,10 +11,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/jasem/fragment"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/singbox"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
@@ -89,19 +91,21 @@ func NewOutboundSubscriptionService() *OutboundSubscriptionService {
 }
 
 // List returns all subscriptions (newest first).
-func (s *OutboundSubscriptionService) List() ([]*model.OutboundSubscription, error) {
+func (s *OutboundSubscriptionService) List() ([]*OutboundSubscriptionView, error) {
 	db := database.GetDB()
 	var subs []*model.OutboundSubscription
 	if err := db.Model(&model.OutboundSubscription{}).Order("priority asc, id asc").Find(&subs).Error; err != nil {
 		return nil, err
 	}
+	views := make([]*OutboundSubscriptionView, 0, len(subs))
 	for _, sub := range subs {
 		sub.OutboundCount = countOutbounds(sub.LastFetchedOutbounds)
 		// Don't ship the heavy raw blobs to the list view.
 		sub.LastFetchedOutbounds = ""
 		sub.LinkIdentities = ""
+		views = append(views, &OutboundSubscriptionView{OutboundSubscription: sub, Skipped: s.Skipped(sub.Id)})
 	}
-	return subs, nil
+	return views, nil
 }
 
 // countOutbounds returns the number of outbounds in a stored LastFetchedOutbounds
@@ -171,7 +175,7 @@ func (s *OutboundSubscriptionService) nextDefaultSubPrefix(excludeId int) (strin
 	return fmt.Sprintf("sub%d-", defaultPrefixNumber(subs, excludeId)), nil
 }
 
-func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure bool) (*model.OutboundSubscription, error) {
+func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure, fragment bool) (*model.OutboundSubscription, error) {
 	cleanURL, err := SanitizePublicHTTPURL(rawURL, allowPrivate)
 	if err != nil {
 		return nil, common.NewError("invalid subscription URL:", err)
@@ -202,6 +206,7 @@ func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgen
 		AllowInsecure:  allowInsecure,
 		UserAgent:      strings.TrimSpace(userAgent),
 		Prepend:        prepend,
+		Fragment:       fragment,
 		Priority:       int(count),
 		TagPrefix:      prefix,
 		UpdateInterval: updateInterval,
@@ -213,7 +218,7 @@ func (s *OutboundSubscriptionService) Create(remark, rawURL, tagPrefix, userAgen
 }
 
 // Update updates editable fields.
-func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure bool) error {
+func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, userAgent string, enabled bool, updateInterval int, allowPrivate, prepend, allowInsecure, fragment bool) error {
 	sub, err := s.Get(id)
 	if err != nil {
 		return err
@@ -242,6 +247,7 @@ func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, 
 	sub.AllowInsecure = allowInsecure
 	sub.UserAgent = strings.TrimSpace(userAgent)
 	sub.Prepend = prepend
+	sub.Fragment = fragment
 	sub.TagPrefix = prefix
 	sub.UpdateInterval = updateInterval
 	return database.GetDB().Save(sub).Error
@@ -249,6 +255,7 @@ func (s *OutboundSubscriptionService) Update(id int, remark, rawURL, tagPrefix, 
 
 // Delete removes a subscription.
 func (s *OutboundSubscriptionService) Delete(id int) error {
+	skippedBySub.Delete(id)
 	return database.GetDB().Delete(&model.OutboundSubscription{}, id).Error
 }
 
@@ -396,11 +403,8 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 		return nil, err
 	}
 
-	parsed, identities, err := link.ParseSubscriptionBody(body)
-	if err != nil {
-		s.recordError(sub, err)
-		return nil, err
-	}
+	parsedSub := link.ParseSubscription(body)
+	parsed, identities, skipped := parsedSub.Outbounds, parsedSub.Identities, parsedSub.Skipped
 
 	// Load previous identities -> tags for stability
 	prev := map[string]string{}
@@ -431,6 +435,9 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 	for i, ob := range parsed {
 		if _, dropped := filterOutboundsRejectedByCore(fmt.Sprintf("outbound sub %d", sub.Id), []any{map[string]any(ob)}); len(dropped) > 0 {
 			droppedByCore = append(droppedByCore, dropped...)
+			for _, d := range dropped {
+				skipped = append(skipped, link.Skipped{Line: truncateRunes(d, 80), Reason: "rejected by the xray core"})
+			}
 			continue
 		}
 		keptLinks = append(keptLinks, ob)
@@ -460,6 +467,10 @@ func (s *OutboundSubscriptionService) fetchAndStore(sub *model.OutboundSubscript
 
 	sub.LastFetchedOutbounds = string(obsJSON)
 	sub.LinkIdentities = string(identJSON)
+	if skipped == nil {
+		skipped = []link.Skipped{}
+	}
+	skippedBySub.Store(sub.Id, skipped)
 	sub.LastUpdated = time.Now().Unix()
 	sub.LastError = ""
 	if len(droppedByCore) > 0 {
@@ -572,6 +583,9 @@ func (s *OutboundSubscriptionService) activeOutboundsSplit() (prepend []any, app
 			continue
 		}
 		arr, _ = filterOutboundsRejectedByCore(fmt.Sprintf("outbound sub %d", sub.Id), arr)
+		if sub.Fragment {
+			applyFragment(arr)
+		}
 		if sub.Prepend {
 			prepend = append(prepend, arr...)
 		} else {
@@ -673,3 +687,59 @@ Consequences for balancers / routing:
 We deliberately do *not* mutate the saved xrayTemplateConfig. Subscription
 outbounds are always injected at runtime in GetXrayConfig.
 */
+
+// OutboundSubscriptionView is a subscription plus the entries its last fetch
+// could not import (kept in memory only).
+type OutboundSubscriptionView struct {
+	*model.OutboundSubscription
+	Skipped []link.Skipped `json:"skipped"`
+}
+
+var skippedBySub sync.Map
+
+// Skipped returns the entries the last fetch of subscription id could not import.
+func (s *OutboundSubscriptionService) Skipped(id int) []link.Skipped {
+	if v, ok := skippedBySub.Load(id); ok {
+		return v.([]link.Skipped)
+	}
+	return []link.Skipped{}
+}
+
+// applyFragment chains the stream-capable proxy outbounds through the shared
+// fragment outbound; datagram transports and existing dialerProxy settings are left alone.
+func applyFragment(outbounds []any) {
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch ob["protocol"] {
+		case "vless", "vmess", "trojan", "shadowsocks", "socks", "http":
+		default:
+			continue
+		}
+		stream, _ := ob["streamSettings"].(map[string]any)
+		if stream == nil {
+			stream = map[string]any{}
+			ob["streamSettings"] = stream
+		}
+		if network, _ := stream["network"].(string); network == "kcp" || network == "hysteria" {
+			continue
+		}
+		sockopt, _ := stream["sockopt"].(map[string]any)
+		if sockopt == nil {
+			sockopt = map[string]any{}
+			stream["sockopt"] = sockopt
+		}
+		if existing, _ := sockopt["dialerProxy"].(string); existing == "" {
+			sockopt["dialerProxy"] = fragment.Tag
+		}
+	}
+}
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}

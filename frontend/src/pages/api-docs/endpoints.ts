@@ -138,6 +138,14 @@ const outboundSubscriptionBodyParams: EndpointParam[] = [
     optional: true,
     defaultValue: false,
   },
+  {
+    name: 'fragment',
+    in: 'body (form)',
+    type: 'boolean',
+    desc: "Chain this subscription's xray outbounds through the TLS-fragment outbound (dialerProxy). Default false.",
+    optional: true,
+    defaultValue: false,
+  },
 ];
 
 const subBalancerBodyParams: EndpointParam[] = [
