@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "Trafiği yapılandırılmış yük dengeleyicilerden biri üzerinden yönlendirir"
       },
       "outboundForm": {
+        "fragment": "Parçalama (Fragment)",
+        "fragmentHint": "Bu giden bağlantının TCP trafiğini DPI'yı aşmak için yerleşik TLS parçalama bağlayıcısı (jasem-fragment) üzerinden geçirir.",
+        "singboxJsonOnly": "Bu bir sing-box giden bağlantısıdır. JSON sekmesinden düzenleyin.",
         "tagDuplicate": "Etiket başka bir giden bağlantı tarafından kullanılıyor",
         "tagRequired": "Etiket zorunludur",
         "tagPlaceholder": "benzersiz-etiket",
@@ -1851,6 +1854,9 @@
         "moveToTop": "En üste taşı"
       },
       "outboundSub": {
+        "fragment": "Parçalama (Fragment)",
+        "fragmentHint": "Bu aboneliğin tüm giden bağlantılarını TLS parçalama bağlayıcısı üzerinden geçirir.",
+        "skippedCount": "{count} satır atlandı",
         "manage": "Abonelikler",
         "title": "Giden Bağlantı Abonelikleri",
         "remark": "Açıklama (isteğe bağlı)",

@@ -35,6 +35,7 @@ import {
   showSecurity,
   testResult,
   trafficFor,
+  outboundProtocolLabel,
 } from './outbounds-tab-helpers';
 
 interface OutboundCardListProps {
@@ -147,7 +148,7 @@ export default function OutboundCardList({
               <Tooltip title={record.tag}>
                 <span className="tag-name">{record.tag}</span>
               </Tooltip>
-              <Tag color="green">{record.protocol}</Tag>
+              <Tag color="green">{outboundProtocolLabel(record)}</Tag>
               {[Protocols.VMess, Protocols.VLESS, Protocols.Trojan, Protocols.Shadowsocks].includes(
                 record.protocol as never,
               ) && (

@@ -600,6 +600,9 @@ export function rawOutboundToFormValues(raw: RawOutboundRow): OutboundFormValues
     case 'loopback':
       typed = { protocol: 'loopback', settings: loopbackFromWire(settings) };
       break;
+    case 'singbox':
+      typed = { protocol: 'singbox', settings: { outbound: asObject(settings.outbound) } };
+      break;
     default:
       typed = { protocol: 'vless', settings: vlessFromWire(settings) };
   }
@@ -900,6 +903,9 @@ export function formValuesToWirePayload(values: OutboundFormValues): WireOutboun
       break;
     case 'loopback':
       settings = loopbackToWire(values.settings);
+      break;
+    case 'singbox':
+      settings = { outbound: values.settings.outbound };
       break;
   }
 

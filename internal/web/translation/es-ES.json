@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "Enruta el tráfico a través de uno de los balanceadores configurados"
       },
       "outboundForm": {
+        "fragment": "Fragmentación",
+        "fragmentHint": "Enruta la conexión TCP de esta salida por el fragmentador TLS integrado (jasem-fragment) para evitar el DPI.",
+        "singboxJsonOnly": "Esta es una salida sing-box. Edítela desde la pestaña JSON.",
         "tagDuplicate": "Etiqueta ya usada por otra salida",
         "tagRequired": "La etiqueta es obligatoria",
         "tagPlaceholder": "etiqueta-única",
@@ -1851,6 +1854,9 @@
         "moveToTop": "Mover al principio"
       },
       "outboundSub": {
+        "fragment": "Fragmentación",
+        "fragmentHint": "Enruta todas las salidas de esta suscripción por el fragmentador TLS.",
+        "skippedCount": "{count} líneas omitidas",
         "manage": "Suscripciones",
         "title": "Suscripciones de salida",
         "remark": "Notas (opcional)",

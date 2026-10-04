@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "Định tuyến lưu lượng qua một trong các bộ cân bằng tải đã cấu hình"
       },
       "outboundForm": {
+        "fragment": "Phân mảnh (Fragment)",
+        "fragmentHint": "Chuyển kết nối TCP của outbound này qua bộ quay số phân mảnh TLS tích hợp (jasem-fragment) để tránh DPI.",
+        "singboxJsonOnly": "Đây là outbound sing-box. Hãy chỉnh sửa trong tab JSON.",
         "tagDuplicate": "Tag đã được dùng bởi outbound khác",
         "tagRequired": "Tag là bắt buộc",
         "tagPlaceholder": "tag-duy-nhất",
@@ -1851,6 +1854,9 @@
         "moveToTop": "Chuyển lên đầu"
       },
       "outboundSub": {
+        "fragment": "Phân mảnh (Fragment)",
+        "fragmentHint": "Chuyển mọi outbound của đăng ký này qua bộ quay số phân mảnh TLS.",
+        "skippedCount": "Đã bỏ qua {count} dòng",
         "manage": "Đăng ký",
         "title": "Đăng ký Outbound",
         "remark": "Ghi chú (tùy chọn)",

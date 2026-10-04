@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Form, Input, InputNumber, Modal, Radio, Select, Space, Tabs, message } from 'antd';
+import {
+  Alert,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Radio,
+  Select,
+  Space,
+  Switch,
+  Tabs,
+  message,
+} from 'antd';
 import { Controller, FormProvider, useForm, useWatch } from 'react-hook-form';
 import { FinalMaskField, SniffingField } from '@/lib/xray/forms/fields';
 import { FormField, rhfZodValidate } from '@/components/form/rhf';
@@ -8,6 +20,7 @@ import { JsonEditor } from '@/components/form';
 import { Wireguard } from '@/utils';
 import { formValuesToWirePayload, rawOutboundToFormValues } from '@/lib/xray/outbound-form-adapter';
 import { parseOutboundLink } from '@/lib/xray/outbound-link-parser';
+import { SockoptStreamSettingsSchema } from '@/schemas/protocols/stream/sockopt';
 import { XMUX_FRESH_DEFAULTS } from '@/schemas/protocols/stream/xhttp';
 import { OutboundFormBaseSchema, type OutboundFormValues } from '@/schemas/forms/outbound-form';
 import {
@@ -19,8 +32,10 @@ import {
 
 import {
   FLOW_OPTIONS,
+  FRAGMENT_DIALER_TAG,
   HYSTERIA_NETWORK_OPTION,
   NETWORK_OPTIONS,
+  NO_FRAGMENT_PROTOCOLS,
   PROTOCOL_OPTIONS,
   SERVER_PROTOCOLS,
   TARGET_STRATEGY_OPTIONS,
@@ -101,6 +116,14 @@ export default function OutboundFormModal({
     'none') as string;
   const flow = (useWatch({ control: methods.control, name: 'settings.flow' }) ?? '') as string;
   const reverseTag = useWatch({ control: methods.control, name: 'settings.reverseTag' });
+  const singboxType = useWatch({ control: methods.control, name: 'settings.outbound.type' }) as
+    | string
+    | undefined;
+  const dialerProxy = (useWatch({
+    control: methods.control,
+    name: 'streamSettings.sockopt.dialerProxy',
+  }) ?? '') as string;
+  const isSingbox = protocol === 'singbox';
   const wgSecretKey = useWatch({ control: methods.control, name: 'settings.secretKey' }) as
     | string
     | undefined;
@@ -204,6 +227,15 @@ export default function OutboundFormModal({
     });
     return () => sub.unsubscribe();
   }, [methods]);
+
+  function onFragmentToggle(on: boolean) {
+    const current = methods.getValues('streamSettings.sockopt');
+    const base = current ?? SockoptStreamSettingsSchema.parse({});
+    methods.setValue('streamSettings.sockopt', {
+      ...base,
+      dialerProxy: on ? FRAGMENT_DIALER_TAG : '',
+    });
+  }
 
   function onSecurityChange(next: string) {
     const stream = (methods.getValues('streamSettings') ?? {}) as Record<string, unknown>;
@@ -374,7 +406,15 @@ export default function OutboundFormModal({
                         name="protocol"
                         rules={{ validate: rhfZodValidate(OutboundFormBaseSchema.shape.tag) }}
                       >
-                        <Select id="protocol" options={PROTOCOL_OPTIONS} />
+                        <Select
+                          id="protocol"
+                          disabled={isSingbox}
+                          options={
+                            isSingbox
+                              ? [{ value: 'singbox', label: singboxType || 'singbox' }]
+                              : PROTOCOL_OPTIONS
+                          }
+                        />
                       </FormField>
 
                       <Controller
@@ -413,159 +453,193 @@ export default function OutboundFormModal({
                         }}
                       />
 
-                      <FormField label={t('pages.xray.outbound.sendThrough')} name="sendThrough">
-                        <Input placeholder={t('pages.xray.outboundForm.localIpPlaceholder')} />
-                      </FormField>
-
-                      {/* Freedom's own card owns the strategy — the core migrates this
-                          root key into the same sockopt value, so two knobs would race. */}
-                      {protocol !== 'freedom' && (
-                        <FormField
-                          label={t('pages.xray.outbound.targetStrategy')}
-                          name="targetStrategy"
-                          tooltip={t('pages.xray.outboundForm.targetStrategyHint')}
-                        >
-                          <Select allowClear placeholder="AsIs" options={TARGET_STRATEGY_OPTIONS} />
-                        </FormField>
-                      )}
-
-                      {SERVER_PROTOCOLS.has(protocol) && <ServerTarget />}
-                      {protocol === 'vmess' && <VmessFields />}
-                      {protocol === 'vless' && <VlessFields />}
-                      {protocol === 'trojan' && <TrojanFields />}
-                      {protocol === 'shadowsocks' && <ShadowsocksFields />}
-                      {protocol === 'http' && <HttpFields />}
-                      {protocol === 'socks' && <SocksFields />}
-
-                      {protocol === 'loopback' && <LoopbackFields />}
-                      {protocol === 'blackhole' && <BlackholeFields />}
-                      {protocol === 'dns' && <DnsFields />}
-
-                      {protocol === 'freedom' && <FreedomFields />}
-
-                      {protocol === 'vless' && reverseTag && (
-                        <Controller
-                          control={methods.control}
-                          name="settings.reverseSniffing"
-                          render={({ field }) => (
-                            <SniffingField
-                              value={field.value}
-                              onChange={field.onChange}
-                              enableLabel={t('pages.xray.outboundForm.reverseSniffing')}
-                            />
-                          )}
+                      {isSingbox && (
+                        <Alert
+                          type="info"
+                          showIcon
+                          style={{ marginBottom: 12 }}
+                          title={t('pages.xray.outboundForm.singboxJsonOnly')}
                         />
                       )}
 
-                      {protocol === 'wireguard' && <WireguardFields />}
-                      {protocol === 'amneziawg' && <AmneziawgFields />}
-
-                      {streamAllowed && network && (
-                        <>
-                          <Form.Item label={t('transmission')}>
-                            <Select
-                              value={network}
-                              onChange={onNetworkChange}
-                              options={
-                                protocol === 'hysteria'
-                                  ? [HYSTERIA_NETWORK_OPTION]
-                                  : NETWORK_OPTIONS
-                              }
-                            />
-                          </Form.Item>
-
-                          {network === 'tcp' && <RawForm />}
-
-                          {network === 'kcp' && <KcpForm />}
-
-                          {network === 'ws' && <WsForm />}
-
-                          {network === 'grpc' && <GrpcForm />}
-
-                          {network === 'httpupgrade' && <HttpUpgradeForm />}
-
-                          {network === 'xhttp' && <XhttpForm onXmuxToggle={onXmuxToggle} />}
-
-                          {network === 'hysteria' && <HysteriaForm />}
-                        </>
-                      )}
-
-                      {tlsFlowAllowed && (
-                        <FormField label={t('pages.clients.flow')} name={['settings', 'flow']}>
-                          <Select
-                            allowClear
-                            placeholder={t('none')}
-                            options={[{ value: '', label: t('none') }, ...FLOW_OPTIONS]}
-                          />
-                        </FormField>
-                      )}
-
-                      {/* Vision seed knobs only meaningful for the exact
-                          xtls-rprx-vision flow, on TCP+(tls|reality). */}
-                      {tlsFlowAllowed && flow === 'xtls-rprx-vision' && (
+                      {!isSingbox && (
                         <>
                           <FormField
-                            label={t('pages.xray.outboundForm.visionTestpre')}
-                            name={['settings', 'testpre']}
+                            label={t('pages.xray.outbound.sendThrough')}
+                            name="sendThrough"
                           >
-                            <InputNumber min={0} style={{ width: '100%' }} />
+                            <Input placeholder={t('pages.xray.outboundForm.localIpPlaceholder')} />
                           </FormField>
-                          <Form.Item label={t('pages.inbounds.form.visionTestseed')}>
-                            <Space.Compact block>
-                              {[0, 1, 2, 3].map((i) => (
-                                <FormField key={i} name={['settings', 'testseed', i]} noStyle>
-                                  <InputNumber min={1} style={{ width: '25%' }} />
-                                </FormField>
-                              ))}
-                            </Space.Compact>
-                          </Form.Item>
+
+                          {/* Freedom's own card owns the strategy — the core migrates this
+                          root key into the same sockopt value, so two knobs would race. */}
+                          {protocol !== 'freedom' && (
+                            <FormField
+                              label={t('pages.xray.outbound.targetStrategy')}
+                              name="targetStrategy"
+                              tooltip={t('pages.xray.outboundForm.targetStrategyHint')}
+                            >
+                              <Select
+                                allowClear
+                                placeholder="AsIs"
+                                options={TARGET_STRATEGY_OPTIONS}
+                              />
+                            </FormField>
+                          )}
+
+                          {SERVER_PROTOCOLS.has(protocol) && <ServerTarget />}
+                          {protocol === 'vmess' && <VmessFields />}
+                          {protocol === 'vless' && <VlessFields />}
+                          {protocol === 'trojan' && <TrojanFields />}
+                          {protocol === 'shadowsocks' && <ShadowsocksFields />}
+                          {protocol === 'http' && <HttpFields />}
+                          {protocol === 'socks' && <SocksFields />}
+
+                          {protocol === 'loopback' && <LoopbackFields />}
+                          {protocol === 'blackhole' && <BlackholeFields />}
+                          {protocol === 'dns' && <DnsFields />}
+
+                          {protocol === 'freedom' && <FreedomFields />}
+
+                          {protocol === 'vless' && reverseTag && (
+                            <Controller
+                              control={methods.control}
+                              name="settings.reverseSniffing"
+                              render={({ field }) => (
+                                <SniffingField
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  enableLabel={t('pages.xray.outboundForm.reverseSniffing')}
+                                />
+                              )}
+                            />
+                          )}
+
+                          {protocol === 'wireguard' && <WireguardFields />}
+                          {protocol === 'amneziawg' && <AmneziawgFields />}
+
+                          {streamAllowed && network && (
+                            <>
+                              <Form.Item label={t('transmission')}>
+                                <Select
+                                  value={network}
+                                  onChange={onNetworkChange}
+                                  options={
+                                    protocol === 'hysteria'
+                                      ? [HYSTERIA_NETWORK_OPTION]
+                                      : NETWORK_OPTIONS
+                                  }
+                                />
+                              </Form.Item>
+
+                              {network === 'tcp' && <RawForm />}
+
+                              {network === 'kcp' && <KcpForm />}
+
+                              {network === 'ws' && <WsForm />}
+
+                              {network === 'grpc' && <GrpcForm />}
+
+                              {network === 'httpupgrade' && <HttpUpgradeForm />}
+
+                              {network === 'xhttp' && <XhttpForm onXmuxToggle={onXmuxToggle} />}
+
+                              {network === 'hysteria' && <HysteriaForm />}
+                            </>
+                          )}
+
+                          {tlsFlowAllowed && (
+                            <FormField label={t('pages.clients.flow')} name={['settings', 'flow']}>
+                              <Select
+                                allowClear
+                                placeholder={t('none')}
+                                options={[{ value: '', label: t('none') }, ...FLOW_OPTIONS]}
+                              />
+                            </FormField>
+                          )}
+
+                          {/* Vision seed knobs only meaningful for the exact
+                          xtls-rprx-vision flow, on TCP+(tls|reality). */}
+                          {tlsFlowAllowed && flow === 'xtls-rprx-vision' && (
+                            <>
+                              <FormField
+                                label={t('pages.xray.outboundForm.visionTestpre')}
+                                name={['settings', 'testpre']}
+                              >
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                              </FormField>
+                              <Form.Item label={t('pages.inbounds.form.visionTestseed')}>
+                                <Space.Compact block>
+                                  {[0, 1, 2, 3].map((i) => (
+                                    <FormField key={i} name={['settings', 'testseed', i]} noStyle>
+                                      <InputNumber min={1} style={{ width: '25%' }} />
+                                    </FormField>
+                                  ))}
+                                </Space.Compact>
+                              </Form.Item>
+                            </>
+                          )}
+
+                          {streamAllowed && network && (
+                            <Form.Item label={t('security')}>
+                              <Radio.Group
+                                value={security}
+                                buttonStyle="solid"
+                                onChange={(e) => onSecurityChange(e.target.value as string)}
+                              >
+                                {network !== 'hysteria' && (
+                                  <Radio.Button value="none">{t('none')}</Radio.Button>
+                                )}
+                                {tlsAllowed && <Radio.Button value="tls">TLS</Radio.Button>}
+                                {realityAllowed && (
+                                  <Radio.Button value="reality">Reality</Radio.Button>
+                                )}
+                              </Radio.Group>
+                            </Form.Item>
+                          )}
+
+                          {security === 'tls' && tlsAllowed && <TlsForm />}
+
+                          {security === 'reality' && realityAllowed && <RealityForm />}
+
+                          {!NO_FRAGMENT_PROTOCOLS.has(protocol) && (
+                            <Form.Item
+                              label={t('pages.xray.outboundForm.fragment')}
+                              tooltip={t('pages.xray.outboundForm.fragmentHint')}
+                            >
+                              <Switch
+                                checked={dialerProxy === FRAGMENT_DIALER_TAG}
+                                onChange={onFragmentToggle}
+                              />
+                            </Form.Item>
+                          )}
+
+                          {((streamAllowed && network) ||
+                            !streamAllowed ||
+                            protocol === 'wireguard') && (
+                            <SockoptForm
+                              outboundTags={dialerProxyTags ?? existingTags}
+                              showDomainStrategy={protocol !== 'freedom'}
+                            />
+                          )}
+
+                          <Controller
+                            control={methods.control}
+                            name="streamSettings.finalmask"
+                            render={({ field }) => (
+                              <FinalMaskField
+                                key={`${protocol}:${network}`}
+                                value={field.value}
+                                onChange={field.onChange}
+                                network={network}
+                                protocol={protocol}
+                              />
+                            )}
+                          />
+
+                          <MuxForm protocol={protocol} network={network} />
                         </>
                       )}
-
-                      {streamAllowed && network && (
-                        <Form.Item label={t('security')}>
-                          <Radio.Group
-                            value={security}
-                            buttonStyle="solid"
-                            onChange={(e) => onSecurityChange(e.target.value as string)}
-                          >
-                            {network !== 'hysteria' && (
-                              <Radio.Button value="none">{t('none')}</Radio.Button>
-                            )}
-                            {tlsAllowed && <Radio.Button value="tls">TLS</Radio.Button>}
-                            {realityAllowed && <Radio.Button value="reality">Reality</Radio.Button>}
-                          </Radio.Group>
-                        </Form.Item>
-                      )}
-
-                      {security === 'tls' && tlsAllowed && <TlsForm />}
-
-                      {security === 'reality' && realityAllowed && <RealityForm />}
-
-                      {((streamAllowed && network) ||
-                        !streamAllowed ||
-                        protocol === 'wireguard') && (
-                        <SockoptForm
-                          outboundTags={dialerProxyTags ?? existingTags}
-                          showDomainStrategy={protocol !== 'freedom'}
-                        />
-                      )}
-
-                      <Controller
-                        control={methods.control}
-                        name="streamSettings.finalmask"
-                        render={({ field }) => (
-                          <FinalMaskField
-                            key={`${protocol}:${network}`}
-                            value={field.value}
-                            onChange={field.onChange}
-                            network={network}
-                            protocol={protocol}
-                          />
-                        )}
-                      />
-
-                      <MuxForm protocol={protocol} network={network} />
                     </>
                   ),
                 },

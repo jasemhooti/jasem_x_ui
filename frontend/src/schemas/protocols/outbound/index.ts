@@ -8,6 +8,7 @@ import { HttpOutboundSettingsSchema } from './http';
 import { HysteriaOutboundSettingsSchema } from './hysteria';
 import { LoopbackOutboundSettingsSchema } from './loopback';
 import { ShadowsocksOutboundSettingsSchema } from './shadowsocks';
+import { SingboxOutboundSettingsSchema } from './singbox';
 import { SocksOutboundSettingsSchema } from './socks';
 import { TrojanOutboundSettingsSchema } from './trojan';
 import { VlessOutboundSettingsSchema } from './vless';
@@ -22,6 +23,7 @@ export * from './http';
 export * from './hysteria';
 export * from './loopback';
 export * from './shadowsocks';
+export * from './singbox';
 export * from './socks';
 export * from './trojan';
 export * from './vless';
@@ -42,5 +44,6 @@ export const OutboundSettingsSchema = z.discriminatedUnion('protocol', [
   z.object({ protocol: z.literal('blackhole'), settings: BlackholeOutboundSettingsSchema }),
   z.object({ protocol: z.literal('dns'), settings: DNSOutboundSettingsSchema }),
   z.object({ protocol: z.literal('loopback'), settings: LoopbackOutboundSettingsSchema }),
+  z.object({ protocol: z.literal('singbox'), settings: SingboxOutboundSettingsSchema }),
 ]);
 export type OutboundSettings = z.infer<typeof OutboundSettingsSchema>;

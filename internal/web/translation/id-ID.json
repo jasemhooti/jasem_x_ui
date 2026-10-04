@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "Mengarahkan trafik melalui salah satu balancer yang dikonfigurasi"
       },
       "outboundForm": {
+        "fragment": "Fragmen",
+        "fragmentHint": "Alihkan koneksi TCP outbound ini melalui dialer fragmen TLS bawaan (jasem-fragment) untuk menghindari DPI.",
+        "singboxJsonOnly": "Ini adalah outbound sing-box. Edit melalui tab JSON.",
         "tagDuplicate": "Tag sudah digunakan oleh outbound lain",
         "tagRequired": "Tag wajib diisi",
         "tagPlaceholder": "tag-unik",
@@ -1851,6 +1854,9 @@
         "moveToTop": "Pindahkan ke atas"
       },
       "outboundSub": {
+        "fragment": "Fragmen",
+        "fragmentHint": "Alihkan semua outbound langganan ini melalui dialer fragmen TLS.",
+        "skippedCount": "{count} baris dilewati",
         "manage": "Langganan",
         "title": "Langganan Outbound",
         "remark": "Catatan (opsional)",

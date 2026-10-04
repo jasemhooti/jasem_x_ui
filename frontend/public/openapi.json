@@ -13915,6 +13915,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Place this subscription's outbounds before the manual template outbounds. Default false."
+                  },
+                  "fragment": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Route every outbound of this subscription through the built-in TLS fragment dialer. Default false."
                   }
                 },
                 "required": [
@@ -14013,6 +14018,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Place this subscription's outbounds before the manual template outbounds. Default false."
+                  },
+                  "fragment": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Route every outbound of this subscription through the built-in TLS fragment dialer. Default false."
                   }
                 },
                 "required": [

@@ -138,6 +138,14 @@ const outboundSubscriptionBodyParams: EndpointParam[] = [
     optional: true,
     defaultValue: false,
   },
+  {
+    name: 'fragment',
+    in: 'body (form)',
+    type: 'boolean',
+    desc: 'Route every outbound of this subscription through the built-in TLS fragment dialer. Default false.',
+    optional: true,
+    defaultValue: false,
+  },
 ];
 
 const subBalancerBodyParams: EndpointParam[] = [

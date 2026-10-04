@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "設定済みのロードバランサーの1つを通じてトラフィックをルーティング"
       },
       "outboundForm": {
+        "fragment": "フラグメント",
+        "fragmentHint": "このアウトバウンドの TCP 接続を内蔵の TLS フラグメントダイヤラー（jasem-fragment）経由にして DPI を回避します。",
+        "singboxJsonOnly": "これは sing-box のアウトバウンドです。JSON タブで編集してください。",
         "tagDuplicate": "このタグは他のアウトバウンドで使用されています",
         "tagRequired": "タグは必須です",
         "tagPlaceholder": "一意のタグ",
@@ -1851,6 +1854,9 @@
         "moveToTop": "先頭に移動"
       },
       "outboundSub": {
+        "fragment": "フラグメント",
+        "fragmentHint": "このサブスクリプションのすべてのアウトバウンドを TLS フラグメントダイヤラー経由にします。",
+        "skippedCount": "スキップされた行: {count}",
         "manage": "サブスクリプション",
         "title": "アウトバウンドサブスクリプション",
         "remark": "備考（任意）",
