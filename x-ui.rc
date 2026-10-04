@@ -1,15 +1,15 @@
 #!/sbin/openrc-run
 
-command="/usr/local/x-ui/x-ui"
+command="/usr/local/jasem_x_ui/x-ui"
 command_background=true
-pidfile="/run/x-ui.pid"
-description="x-ui Service"
+pidfile="/run/jasem_x_ui.pid"
+description="jasem_x_ui Service"
 procname="x-ui"
 depend() {
     need net
 }
 start_pre(){
-    cd /usr/local/x-ui
+    cd /usr/local/jasem_x_ui
 }
 reload() {
   ebegin "Reloading ${RC_SVCNAME}"

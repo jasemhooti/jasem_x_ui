@@ -161,7 +161,7 @@ func GetDBFolderPath() string {
 	if runtime.GOOS == "windows" {
 		return getBaseDir()
 	}
-	return "/etc/x-ui"
+	return "/etc/jasem_x_ui"
 }
 
 // GetDBPath returns the full path to the database file.
@@ -205,7 +205,7 @@ func GetNodeTokenKeyFile() string {
 	if p := strings.TrimSpace(os.Getenv("XUI_NODE_TOKEN_KEY_FILE")); p != "" {
 		return p
 	}
-	return "/etc/x-ui/node_token_key.json"
+	return "/etc/jasem_x_ui/node_token_key.json"
 }
 
 // GetNodeTokenKeyEnv returns the name of the env var holding a single base64
@@ -221,9 +221,9 @@ func GetEnvFilePaths() []string {
 		return nil
 	}
 	return []string{
-		"/etc/default/x-ui",
-		"/etc/conf.d/x-ui",
-		"/etc/sysconfig/x-ui",
+		"/etc/default/jasem_x_ui",
+		"/etc/conf.d/jasem_x_ui",
+		"/etc/sysconfig/jasem_x_ui",
 	}
 }
 
@@ -242,7 +242,7 @@ func GetLogFolder() string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(".", "log")
 	}
-	return "/var/log/x-ui"
+	return "/var/log/jasem_x_ui"
 }
 
 func copyFile(src, dst string) error {
@@ -273,7 +273,7 @@ func init() {
 	if os.Getenv("XUI_DB_FOLDER") != "" {
 		return
 	}
-	oldDBFolder := "/etc/x-ui"
+	oldDBFolder := "/etc/jasem_x_ui"
 	oldDBPath := fmt.Sprintf("%s/%s.db", oldDBFolder, GetName())
 	newDBFolder := GetDBFolderPath()
 	newDBPath := fmt.Sprintf("%s/%s.db", newDBFolder, GetName())
