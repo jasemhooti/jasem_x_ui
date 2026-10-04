@@ -31,7 +31,7 @@ RUN go build -ldflags "-w -s" -o build/x-ui main.go
 RUN ./DockerInit.sh "$TARGETARCH"
 
 # ========================================================
-# Stage: Final Image of 3x-ui
+# Stage: Final Image of jasem_x_ui
 # ========================================================
 FROM alpine
 ENV TZ=Asia/Tehran
@@ -47,7 +47,7 @@ RUN apk add --no-cache --update \
 
 COPY --from=builder /app/build/ /app/
 COPY --from=builder /app/DockerEntrypoint.sh /app/
-COPY --from=builder /app/x-ui.sh /usr/bin/x-ui
+COPY --from=builder /app/x-ui.sh /usr/bin/jasem-x-ui
 COPY --from=builder /app/internal/web/translation /app/internal/web/translation
 
 
@@ -61,7 +61,7 @@ RUN rm -f /etc/fail2ban/jail.d/alpine-ssh.conf \
 RUN chmod +x \
   /app/DockerEntrypoint.sh \
   /app/x-ui \
-  /usr/bin/x-ui
+  /usr/bin/jasem-x-ui
 
 ENV XUI_IN_DOCKER="true"
 ENV XUI_MAIN_FOLDER="/app"
@@ -69,6 +69,6 @@ ENV XUI_ENABLE_FAIL2BAN="true"
 ENV XUI_DB_TYPE=""
 ENV XUI_DB_DSN=""
 EXPOSE 2053
-VOLUME [ "/etc/x-ui" ]
+VOLUME [ "/etc/jasem_x_ui" ]
 CMD [ "./x-ui" ]
 ENTRYPOINT [ "/app/DockerEntrypoint.sh" ]

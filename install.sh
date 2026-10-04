@@ -6,8 +6,25 @@ blue='\033[0;34m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-xui_folder="${XUI_MAIN_FOLDER:=/usr/local/x-ui}"
+xui_folder="${XUI_MAIN_FOLDER:=/usr/local/jasem_x_ui}"
 xui_service="${XUI_SERVICE:=/etc/systemd/system}"
+xui_repo="jasemhooti/jasem_x_ui"
+
+# Usage: install.sh [tag] [--local <tar.gz>] [--mirror <base-url>]
+# --mirror <base-url> is a directory holding jasem_x_ui-linux-<arch>.tar.gz.
+local_archive="${XUI_LOCAL_ARCHIVE:-}"
+mirror_base="${XUI_MIRROR:-}"
+tag_arg=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --local) local_archive="$2"; shift 2 ;;
+        --local=*) local_archive="${1#--local=}"; shift ;;
+        --mirror) mirror_base="$2"; shift 2 ;;
+        --mirror=*) mirror_base="${1#--mirror=}"; shift ;;
+        *) tag_arg="$1"; shift ;;
+    esac
+done
+mirror_base="${mirror_base%/}"
 
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
@@ -28,17 +45,14 @@ echo "The OS release is: $release"
 arch() {
     case "$(uname -m)" in
         x86_64 | x64 | amd64) echo 'amd64' ;;
-        i*86 | x86) echo '386' ;;
         armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
-        armv7* | armv7 | arm) echo 'armv7' ;;
-        armv6* | armv6) echo 'armv6' ;;
-        armv5* | armv5) echo 'armv5' ;;
-        s390x) echo 's390x' ;;
-        *) echo -e "${green}Unsupported CPU architecture! ${plain}" && rm -f "$(realpath "$0")" && exit 1 ;;
+        *) echo -e "${green}Unsupported CPU architecture (only amd64 and arm64 are supported)! ${plain}" >&2 && exit 1 ;;
     esac
 }
 
 echo "Arch: $(arch)"
+xui_asset="jasem_x_ui-linux-$(arch).tar.gz"
+xui_archive="${xui_folder}-linux-$(arch).tar.gz"
 
 # Non-interactive mode: triggered explicitly via XUI_NONINTERACTIVE=1, or
 # implicitly when stdin is not a TTY (e.g. `curl ... | bash`, cloud-init).
@@ -150,12 +164,12 @@ prompt_or_default() {
 # spaces, quotes, $(...) or backticks is shell-escaped and the file stays safely
 # source-able (consumers do '. install-result.env'). For the alphanumeric random
 # values gen_random_string emits, %q is a no-op. This is a DIFFERENT file from the
-# Postgres env file (/etc/default/x-ui).
+# Postgres env file (/etc/default/jasem_x_ui).
 write_install_result() {
     local u="$1" p="$2" port="$3" wbp="$4" scheme="$5" host="$6" token="$7" dbtype="$8"
-    local result_file="/etc/x-ui/install-result.env"
+    local result_file="/etc/jasem_x_ui/install-result.env"
     local url_host="${host:-SERVER_IP_UNKNOWN}"
-    install -d -m 700 /etc/x-ui 2> /dev/null
+    install -d -m 700 /etc/jasem_x_ui 2> /dev/null
     local prev_umask
     prev_umask=$(umask)
     umask 077
@@ -354,16 +368,19 @@ ensure_pg_client() {
     command -v pg_dump > /dev/null 2>&1 && command -v pg_restore > /dev/null 2>&1
 }
 
+# acme.sh ships inside the release archive, so no access to get.acme.sh is needed.
 install_acme() {
-    echo -e "${green}Installing acme.sh for SSL certificate management...${plain}"
-    cd ~ || return 1
-    curl -s https://get.acme.sh | sh > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
+    local bundle="${xui_folder}/acme-bundle"
+    echo -e "${green}Installing bundled acme.sh for SSL certificate management...${plain}"
+    if [[ ! -f "${bundle}/acme.sh" ]]; then
+        echo -e "${red}Bundled acme.sh not found in ${bundle}${plain}"
+        return 1
+    fi
+    if ! (cd "${bundle}" && sh ./acme.sh --install --auto-upgrade 0 > /dev/null 2>&1); then
         echo -e "${red}Failed to install acme.sh${plain}"
         return 1
-    else
-        echo -e "${green}acme.sh installed successfully${plain}"
     fi
+    echo -e "${green}acme.sh installed successfully${plain}"
     return 0
 }
 
@@ -423,7 +440,7 @@ setup_ssl_certificate() {
 
     if [ $? -ne 0 ]; then
         echo -e "${yellow}Failed to issue certificate for ${domain}${plain}"
-        echo -e "${yellow}Please ensure port 80 is open and try again later with: x-ui${plain}"
+        echo -e "${yellow}Please ensure port 80 is open and try again later with: jasem-x-ui${plain}"
         rm -rf ~/.acme.sh/${domain} ~/.acme.sh/${domain}_ecc 2> /dev/null
         rm -rf "$certPath" 2> /dev/null
         return 1
@@ -433,7 +450,7 @@ setup_ssl_certificate() {
     ~/.acme.sh/acme.sh --installcert --force -d ${domain} \
         --key-file /root/cert/${domain}/privkey.pem \
         --fullchain-file /root/cert/${domain}/fullchain.pem \
-        --reloadcmd "systemctl restart x-ui" > /dev/null 2>&1
+        --reloadcmd "systemctl restart jasem_x_ui" > /dev/null 2>&1
 
     if [ $? -ne 0 ]; then
         echo -e "${yellow}Failed to install certificate${plain}"
@@ -441,7 +458,6 @@ setup_ssl_certificate() {
     fi
 
     # Enable auto-renew
-    ~/.acme.sh/acme.sh --upgrade --auto-upgrade > /dev/null 2>&1
     # Secure permissions: private key readable only by owner
     chmod 600 $certPath/privkey.pem 2> /dev/null
     chmod 644 $certPath/fullchain.pem 2> /dev/null
@@ -502,7 +518,7 @@ setup_ip_certificate() {
     fi
 
     # Set reload command for auto-renewal (add || true so it doesn't fail during first install)
-    local reloadCmd="systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null || true"
+    local reloadCmd="systemctl restart jasem_x_ui 2>/dev/null || rc-service jasem_x_ui restart 2>/dev/null || true"
 
     # Choose port for HTTP-01 listener (default 80, prompt override)
     local WebPort=""
@@ -591,8 +607,6 @@ setup_ip_certificate() {
 
     echo -e "${green}Certificate files installed successfully${plain}"
 
-    # Enable auto-upgrade for acme.sh (ensures cron job runs)
-    ~/.acme.sh/acme.sh --upgrade --auto-upgrade > /dev/null 2>&1
 
     # Secure permissions: private key readable only by owner
     chmod 600 ${certDir}/privkey.pem 2> /dev/null
@@ -625,14 +639,7 @@ ssl_cert_issue() {
     # check for acme.sh first
     if ! command -v ~/.acme.sh/acme.sh &> /dev/null; then
         echo "acme.sh could not be found. Installing now..."
-        cd ~ || return 1
-        curl -s https://get.acme.sh | sh
-        if [ $? -ne 0 ]; then
-            echo -e "${red}Failed to install acme.sh${plain}"
-            return 1
-        else
-            echo -e "${green}acme.sh installed successfully${plain}"
-        fi
+        install_acme || return 1
     fi
 
     # get the domain here, and we need to verify it
@@ -713,7 +720,7 @@ ssl_cert_issue() {
 
     # Stop panel temporarily
     echo -e "${yellow}Stopping panel temporarily...${plain}"
-    systemctl stop x-ui 2> /dev/null || rc-service x-ui stop 2> /dev/null
+    systemctl stop jasem_x_ui 2> /dev/null || rc-service jasem_x_ui stop 2> /dev/null
 
     if [[ ${cert_exists} -eq 0 ]]; then
         # issue the certificate
@@ -723,7 +730,7 @@ ssl_cert_issue() {
         if [ $? -ne 0 ]; then
             echo -e "${red}Issuing certificate failed, please check logs.${plain}"
             rm -rf ~/.acme.sh/${domain} ~/.acme.sh/${domain}_ecc
-            systemctl start x-ui 2> /dev/null || rc-service x-ui start 2> /dev/null
+            systemctl start jasem_x_ui 2> /dev/null || rc-service jasem_x_ui start 2> /dev/null
             return 1
         else
             echo -e "${green}Issuing certificate succeeded, installing certificates...${plain}"
@@ -733,8 +740,8 @@ ssl_cert_issue() {
     fi
 
     # Setup reload command
-    reloadCmd="systemctl restart x-ui || rc-service x-ui restart"
-    echo -e "${green}Default --reloadcmd for ACME is: ${yellow}systemctl restart x-ui || rc-service x-ui restart${plain}"
+    reloadCmd="systemctl restart jasem_x_ui || rc-service jasem_x_ui restart"
+    echo -e "${green}Default --reloadcmd for ACME is: ${yellow}systemctl restart jasem_x_ui || rc-service jasem_x_ui restart${plain}"
     echo -e "${green}This command will run on every certificate issue and renew.${plain}"
     if [[ "$NONINTERACTIVE" == "1" ]]; then
         setReloadcmd="n"
@@ -742,17 +749,17 @@ ssl_cert_issue() {
         read -rp "Would you like to modify --reloadcmd for ACME? (y/n): " setReloadcmd
     fi
     if [[ "$setReloadcmd" == "y" || "$setReloadcmd" == "Y" ]]; then
-        echo -e "\n${green}\t1.${plain} Preset: systemctl reload nginx ; systemctl restart x-ui"
+        echo -e "\n${green}\t1.${plain} Preset: systemctl reload nginx ; systemctl restart jasem_x_ui"
         echo -e "${green}\t2.${plain} Input your own command"
         echo -e "${green}\t0.${plain} Keep default reloadcmd"
         read -rp "Choose an option: " choice
         case "$choice" in
             1)
-                echo -e "${green}Reloadcmd is: systemctl reload nginx ; systemctl restart x-ui${plain}"
-                reloadCmd="systemctl reload nginx ; systemctl restart x-ui"
+                echo -e "${green}Reloadcmd is: systemctl reload nginx ; systemctl restart jasem_x_ui${plain}"
+                reloadCmd="systemctl reload nginx ; systemctl restart jasem_x_ui"
                 ;;
             2)
-                echo -e "${yellow}It's recommended to put x-ui restart at the end${plain}"
+                echo -e "${yellow}It's recommended to put jasem-x-ui restart at the end${plain}"
                 read -rp "Please enter your custom reloadcmd: " reloadCmd
                 echo -e "${green}Reloadcmd is: ${reloadCmd}${plain}"
                 ;;
@@ -782,12 +789,11 @@ ssl_cert_issue() {
         if [[ ${cert_exists} -eq 0 ]]; then
             rm -rf ~/.acme.sh/${domain} ~/.acme.sh/${domain}_ecc
         fi
-        systemctl start x-ui 2> /dev/null || rc-service x-ui start 2> /dev/null
+        systemctl start jasem_x_ui 2> /dev/null || rc-service jasem_x_ui start 2> /dev/null
         return 1
     fi
 
     # enable auto-renew
-    ~/.acme.sh/acme.sh --upgrade --auto-upgrade
     if [ $? -ne 0 ]; then
         echo -e "${yellow}Auto renew setup had issues, certificate details:${plain}"
         ls -lah /root/cert/${domain}/
@@ -803,7 +809,7 @@ ssl_cert_issue() {
     fi
 
     # start panel
-    systemctl start x-ui 2> /dev/null || rc-service x-ui start 2> /dev/null
+    systemctl start jasem_x_ui 2> /dev/null || rc-service jasem_x_ui start 2> /dev/null
 
     # Prompt user to set panel paths after successful certificate installation
     if [[ "$NONINTERACTIVE" == "1" ]]; then
@@ -823,7 +829,7 @@ ssl_cert_issue() {
             echo ""
             echo -e "${green}Access URL: https://${domain}:${existing_port}/${existing_webBasePath}${plain}"
             echo -e "${yellow}Panel will restart to apply SSL certificate...${plain}"
-            systemctl restart x-ui 2> /dev/null || rc-service x-ui restart 2> /dev/null
+            systemctl restart jasem_x_ui 2> /dev/null || rc-service jasem_x_ui restart 2> /dev/null
         else
             echo -e "${red}Error: Certificate or private key file not found for domain: $domain.${plain}"
         fi
@@ -922,9 +928,9 @@ prompt_and_setup_ssl() {
 
             # Stop panel if running (port 80 needed)
             if [[ $release == "alpine" ]]; then
-                rc-service x-ui stop > /dev/null 2>&1
+                rc-service jasem_x_ui stop > /dev/null 2>&1
             else
-                systemctl stop x-ui > /dev/null 2>&1
+                systemctl stop jasem_x_ui > /dev/null 2>&1
             fi
 
             setup_ip_certificate "${server_ip}" "${ipv6_addr}"
@@ -994,7 +1000,7 @@ prompt_and_setup_ssl() {
             echo -e "${green}✓ Custom certificate paths applied.${plain}"
             echo -e "${yellow}Note: You are responsible for renewing these files externally.${plain}"
 
-            systemctl restart x-ui > /dev/null 2>&1 || rc-service x-ui restart > /dev/null 2>&1
+            systemctl restart jasem_x_ui > /dev/null 2>&1 || rc-service jasem_x_ui restart > /dev/null 2>&1
             ;;
         4)
             echo ""
@@ -1033,7 +1039,7 @@ prompt_and_setup_ssl() {
                 echo -e "${yellow}Panel will listen on all interfaces over plain HTTP. Make sure something else is terminating TLS in front of it.${plain}"
             fi
 
-            systemctl restart x-ui > /dev/null 2>&1 || rc-service x-ui restart > /dev/null 2>&1
+            systemctl restart jasem_x_ui > /dev/null 2>&1 || rc-service jasem_x_ui restart > /dev/null 2>&1
             echo -e "${green}✓ SSL setup skipped.${plain}"
             ;;
         *)
@@ -1093,7 +1099,7 @@ config_after_install() {
             local config_password="${XUI_PASSWORD:-$(gen_random_string 10)}"
             local config_port=""
 
-            local db_label="SQLite (/etc/x-ui/x-ui.db)"
+            local db_label="SQLite (/etc/jasem_x_ui/x-ui.db)"
             echo ""
             echo -e "${green}═══════════════════════════════════════════${plain}"
             echo -e "${green}     Database Selection                    ${plain}"
@@ -1114,13 +1120,13 @@ config_after_install() {
                 local xui_env_file
                 case "${release}" in
                     ubuntu | debian | armbian)
-                        xui_env_file="/etc/default/x-ui"
+                        xui_env_file="/etc/default/jasem_x_ui"
                         ;;
                     arch | manjaro | parch | alpine)
-                        xui_env_file="/etc/conf.d/x-ui"
+                        xui_env_file="/etc/conf.d/jasem_x_ui"
                         ;;
                     *)
-                        xui_env_file="/etc/sysconfig/x-ui"
+                        xui_env_file="/etc/sysconfig/jasem_x_ui"
                         ;;
                 esac
 
@@ -1389,37 +1395,37 @@ setup_fail2ban() {
         return 0
     fi
 
-    if [[ ! -x /usr/bin/x-ui ]]; then
+    if [[ ! -x /usr/bin/jasem-x-ui ]]; then
         echo -e "${yellow}x-ui CLI not found; skipping Fail2ban auto-setup.${plain}"
         return 0
     fi
 
     # Scripts older than v3.4.0 have no setup-fail2ban and exit 0 from the
     # usage banner, which would read as success here.
-    if ! grep -q '"setup-fail2ban")' /usr/bin/x-ui; then
-        echo -e "${yellow}This x-ui.sh predates 'x-ui setup-fail2ban'; skipping Fail2ban auto-setup.${plain}"
+    if ! grep -q '"setup-fail2ban")' /usr/bin/jasem-x-ui; then
+        echo -e "${yellow}This x-ui.sh predates 'jasem-x-ui setup-fail2ban'; skipping Fail2ban auto-setup.${plain}"
         return 0
     fi
 
     echo -e "${green}Setting up Fail2ban for the IP Limit feature...${plain}"
-    if /usr/bin/x-ui setup-fail2ban; then
+    if /usr/bin/jasem-x-ui setup-fail2ban; then
         echo -e "${green}Fail2ban setup complete.${plain}"
     else
-        echo -e "${yellow}Fail2ban setup did not finish; IP Limit stays disabled until you run 'x-ui' and open the IP Limit menu. Continuing.${plain}"
+        echo -e "${yellow}Fail2ban setup did not finish; IP Limit stays disabled until you run 'jasem-x-ui' and open the IP Limit menu. Continuing.${plain}"
     fi
     return 0
 }
 
-# Lands a systemd unit file at ${xui_service}/x-ui.service via a temp file +
+# Lands a systemd unit file at ${xui_service}/jasem_x_ui.service via a temp file +
 # atomic mv, so a failed cp/curl or an interrupted mv never leaves a
 # truncated unit file at the live path -- systemd would then fail to parse
 # it on the next daemon-reload/start. Same pattern already used for
-# /usr/bin/x-ui elsewhere in this script. source_is_url picks cp (from a
+# /usr/bin/jasem-x-ui elsewhere in this script. source_is_url picks cp (from a
 # file already extracted from the release tarball) vs curl (GitHub fallback).
 _install_xui_service_unit() {
     local source="$1"
     local source_is_url="$2"
-    local dest="${xui_service}/x-ui.service"
+    local dest="${xui_service}/jasem_x_ui.service"
     local temp_file="${dest}.tmp.$$"
 
     rm -f "$temp_file"
@@ -1444,41 +1450,25 @@ _install_xui_service_unit() {
     return 0
 }
 
-# resolve_latest_tag prints the latest stable release tag. It prefers the web
-# releases/latest redirect, which is not subject to the unauthenticated API's
-# 60 req/h-per-IP limit that trips shared CI/CGNAT addresses (the install then
-# fails with "Failed to fetch x-ui version"), and falls back to the API.
+# resolve_latest_tag prints the latest stable release tag. The web redirect is
+# preferred: the unauthenticated API is rate-limited per IP.
 resolve_latest_tag() {
     local url tag
-    url=$(curl -sSLI -o /dev/null -w '%{url_effective}' --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 60 "https://github.com/MHSanaei/3x-ui/releases/latest" 2>/dev/null)
+    url=$(curl -sSLI -o /dev/null -w '%{url_effective}' --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 60 "https://github.com/${xui_repo}/releases/latest" 2> /dev/null)
     tag=${url##*/tag/}
     if [[ "$tag" != "$url" && -n "$tag" && "$tag" != "latest" ]]; then
         echo "$tag"
         return 0
     fi
-    curl -Ls --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 60 "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+    curl -Ls --retry 5 --retry-delay 3 --connect-timeout 15 --max-time 60 "https://api.github.com/repos/${xui_repo}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
 }
 
-# Releases publish <asset>.sha256 next to each archive. A mismatch or a failed
-# sidecar download aborts the install; only a 404 (releases predating the
-# sidecar) is tolerated with a warning.
-verify_release_checksum() {
-    local url="$1" file="$2" sums="$2.sha256" code expected actual
-    rm -f "${sums}"
-    code=$(curl -sL --retry 3 --retry-delay 3 --connect-timeout 15 --max-time 60 -o "${sums}" -w '%{http_code}' "${url}.sha256")
-    if [[ "${code}" == "404" ]]; then
-        rm -f "${sums}"
-        echo -e "${yellow}No checksum published for this release, skipping verification${plain}"
-        return 0
-    fi
-    if [[ "${code}" != "200" ]]; then
-        rm -f "${sums}" "${file}"
-        echo -e "${red}Failed to download the checksum for $(basename "${file}") (HTTP ${code})${plain}"
-        exit 1
-    fi
+# check_sha256 <file> <sidecar>: sidecar is the "<hash>  <name>" file release.yml
+# writes next to each archive. Removes the archive on mismatch.
+check_sha256() {
+    local file="$1" sums="$2" expected actual
     expected=$(awk 'NR == 1 {print $1}' "${sums}")
     actual=$(sha256sum "${file}" | awk '{print $1}')
-    rm -f "${sums}"
     if [[ ! "${expected}" =~ ^[0-9a-f]{64}$ || "${expected}" != "${actual}" ]]; then
         rm -f "${file}"
         echo -e "${red}Checksum mismatch for $(basename "${file}"): expected ${expected:-<none>}, got ${actual}${plain}"
@@ -1487,109 +1477,87 @@ verify_release_checksum() {
     echo -e "${green}Checksum verified: ${actual}${plain}"
 }
 
-# Older tags predate some of these files (x-ui.rc arrived in v2.8.4). Serving
-# main's copy against an old binary is the mismatch this pinning exists to
-# prevent, so probe before anything is stopped or removed and refuse the tag.
-require_repo_files() {
-    local ref="$1" name status
-    shift
-    [[ "${ref}" == "main" ]] && return 0
-    for name in "$@"; do
-        status=$(curl -sIL --retry 3 --connect-timeout 15 -o /dev/null -w '%{http_code}' "https://raw.githubusercontent.com/MHSanaei/3x-ui/${ref}/${name}")
-        if [[ "${status}" != "200" ]]; then
-            echo -e "${red}${name} is not available for ${ref} (HTTP ${status})${plain}"
-            echo -e "${red}Install a release that ships it, or 'dev' for the rolling build. Your existing installation has not been touched.${plain}"
+# Download <url> to <file> and verify it against <url>.sha256 (a 404 sidecar is
+# tolerated with a warning; any other failure aborts).
+download_release_asset() {
+    local url="$1" file="$2" code
+    curl -fLR --retry 5 --retry-delay 3 --connect-timeout 15 --speed-limit 1 --speed-time 300 -o "${file}" "${url}"
+    if [[ $? -ne 0 || ! -s "${file}" ]]; then
+        rm -f "${file}"
+        echo -e "${red}Download failed: ${url}${plain}"
+        echo -e "${yellow}No access to GitHub? Download ${xui_asset} elsewhere and run: bash install.sh --local /path/${xui_asset}${plain}"
+        exit 1
+    fi
+    code=$(curl -sL --retry 3 --retry-delay 3 --connect-timeout 15 --max-time 60 -o "${file}.sha256" -w '%{http_code}' "${url}.sha256")
+    if [[ "${code}" == "200" ]]; then
+        check_sha256 "${file}" "${file}.sha256"
+    elif [[ "${code}" == "404" ]]; then
+        echo -e "${yellow}No checksum published for this release, skipping verification${plain}"
+    else
+        rm -f "${file}" "${file}.sha256"
+        echo -e "${red}Failed to download the checksum for ${xui_asset} (HTTP ${code})${plain}"
+        exit 1
+    fi
+    rm -f "${file}.sha256"
+}
+
+# fetch_release_archive puts the release tarball at ${xui_archive}: --local copies
+# a file, --mirror downloads from <base-url>/<asset>, otherwise GitHub releases.
+fetch_release_archive() {
+    rm -f "${xui_archive}"
+    if [[ -n "${local_archive}" ]]; then
+        if [[ ! -s "${local_archive}" ]]; then
+            echo -e "${red}Local archive not found or empty: ${local_archive}${plain}"
             exit 1
         fi
-    done
+        cp -f "${local_archive}" "${xui_archive}" || exit 1
+        if [[ -s "${local_archive}.sha256" ]]; then
+            check_sha256 "${xui_archive}" "${local_archive}.sha256"
+        fi
+        tag_version="local"
+        echo -e "${green}Using local archive ${local_archive}${plain}"
+    elif [[ -n "${mirror_base}" ]]; then
+        tag_version="mirror"
+        echo -e "Downloading ${xui_asset} from mirror ${mirror_base}"
+        download_release_asset "${mirror_base}/${xui_asset}" "${xui_archive}"
+    else
+        if [[ -z "${tag_arg}" ]]; then
+            tag_version=$(resolve_latest_tag)
+            if [[ -z "$tag_version" ]]; then
+                echo -e "${red}Failed to fetch the latest version (GitHub unreachable?). Use --local <tar.gz> or --mirror <base-url>.${plain}"
+                exit 1
+            fi
+            echo -e "Got latest version: ${tag_version}, beginning the installation..."
+        else
+            tag_version="${tag_arg}"
+            # The rolling dev build ships under the fixed tag dev-latest.
+            if [[ "$tag_version" == "dev" || "$tag_version" == "dev-latest" ]]; then
+                tag_version="dev-latest"
+                echo -e "${yellow}Installing the rolling dev build (tag: dev-latest), not a stable version.${plain}"
+            fi
+        fi
+        download_release_asset "https://github.com/${xui_repo}/releases/download/${tag_version}/${xui_asset}" "${xui_archive}"
+    fi
+    # Refuse a wrong archive before anything is stopped or removed.
+    if ! tar tzf "${xui_archive}" "jasem_x_ui/x-ui" > /dev/null 2>&1; then
+        rm -f "${xui_archive}"
+        echo -e "${red}Not a jasem_x_ui release archive for $(arch): jasem_x_ui/x-ui is missing. Existing installation untouched.${plain}"
+        exit 1
+    fi
 }
 
 install_x-ui() {
-    cd ${xui_folder%/x-ui}/
+    cd "${xui_folder%/*}/" || exit 1
 
-    # Download resources
-    if [ $# == 0 ]; then
-        tag_version=$(resolve_latest_tag)
-        if [[ ! -n "$tag_version" ]]; then
-            echo -e "${red}Failed to fetch x-ui version, it may be due to GitHub API restrictions, please try it later${plain}"
-            exit 1
-        fi
-        echo -e "Got x-ui latest version: ${tag_version}, beginning the installation..."
-        curl -fLR --retry 5 --retry-delay 3 --connect-timeout 15 --speed-limit 1 --speed-time 300 -o ${xui_folder}-linux-$(arch).tar.gz https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Downloading x-ui failed, please be sure that your server can access GitHub ${plain}"
-            exit 1
-        fi
-        if [[ ! -s ${xui_folder}-linux-$(arch).tar.gz ]]; then
-            rm ${xui_folder}-linux-$(arch).tar.gz -f
-            echo -e "${red}Downloaded x-ui release archive is empty${plain}"
-            exit 1
-        fi
-        verify_release_checksum "https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz" "${xui_folder}-linux-$(arch).tar.gz"
-    else
-        tag_version=$1
-        # The rolling dev channel ships under a fixed, non-semver tag that is
-        # force-moved to the latest main commit on every push. Accept `dev` as a
-        # convenient alias and skip the numeric floor check for it.
-        if [[ "$tag_version" == "dev" || "$tag_version" == "dev-latest" ]]; then
-            tag_version="dev-latest"
-            echo -e "${yellow}Installing the rolling dev build (tag: dev-latest). This is a per-commit pre-release, not a stable version.${plain}"
-        else
-            tag_version_numeric=${tag_version#v}
-            min_version="2.3.5"
+    fetch_release_archive
 
-            if [[ "$(printf '%s\n' "$min_version" "$tag_version_numeric" | sort -V | head -n1)" != "$min_version" ]]; then
-                echo -e "${red}Please use a newer version (at least v2.3.5). Exiting installation.${plain}"
-                exit 1
-            fi
-        fi
-
-        url="https://github.com/MHSanaei/3x-ui/releases/download/${tag_version}/x-ui-linux-$(arch).tar.gz"
-        echo -e "Beginning to install x-ui ${tag_version}"
-        curl -fLR --retry 5 --retry-delay 3 --connect-timeout 15 --speed-limit 1 --speed-time 300 -o ${xui_folder}-linux-$(arch).tar.gz ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}Download x-ui ${tag_version} failed, please check if the version exists ${plain}"
-            exit 1
-        fi
-        if [[ ! -s ${xui_folder}-linux-$(arch).tar.gz ]]; then
-            rm ${xui_folder}-linux-$(arch).tar.gz -f
-            echo -e "${red}Downloaded x-ui release archive is empty${plain}"
-            exit 1
-        fi
-        verify_release_checksum "${url}" "${xui_folder}-linux-$(arch).tar.gz"
-    fi
-    # x-ui.sh, x-ui.rc and the unit files must come from the same release as
-    # the binary; only the rolling dev build tracks main.
-    local script_ref="${tag_version}"
-    if [[ "${tag_version}" == "dev-latest" ]]; then
-        script_ref="main"
-    fi
-    # The unit files are only fetched when the release tarball lacks them, so
-    # they are checked at that point instead of here.
-    local required_files=("x-ui.sh")
-    [[ $release == "alpine" ]] && required_files+=("x-ui.rc")
-    require_repo_files "${script_ref}" "${required_files[@]}"
-    local xui_script_temp="/usr/bin/x-ui-temp.$$"
-    rm -f "${xui_script_temp}"
-    curl -fLRo "${xui_script_temp}" "https://raw.githubusercontent.com/MHSanaei/3x-ui/${script_ref}/x-ui.sh"
-    if [[ $? -ne 0 ]]; then
-        rm -f "${xui_script_temp}"
-        echo -e "${red}Failed to download x-ui.sh${plain}"
-        exit 1
-    fi
-    if [[ ! -s "${xui_script_temp}" ]]; then
-        rm -f "${xui_script_temp}"
-        echo -e "${red}Downloaded x-ui.sh is empty${plain}"
-        exit 1
-    fi
-
-    # Stop x-ui service and remove old resources
+    # Stop the service and remove old resources
     local custom_bin_backup=""
     if [[ -e ${xui_folder}/ ]]; then
         if [[ $release == "alpine" ]]; then
-            rc-service x-ui stop
+            rc-service jasem_x_ui stop
         else
-            systemctl stop x-ui
+            systemctl stop jasem_x_ui
         fi
         # Kill any leftover mtg (MTProto) sidecars. x-ui runs them outside its own
         # lifecycle, so on Linux a stale one can survive the stop and keep holding
@@ -1597,70 +1565,46 @@ install_x-ui() {
         # The freshly installed panel respawns a clean mtg per inbound on start.
         pkill -f 'mtg-linux-[^ ]* run ' > /dev/null 2>&1 || true
         pkill -f 'tuic-server.*-c .*bin/tuic/tuic_[0-9]+\.json' > /dev/null 2>&1 || true
+        pkill -f 'sing-box-linux-[^ ]* run ' > /dev/null 2>&1 || true
 
-        # bin/ is about to be wiped wholesale by the tar extraction below. The
-        # release only ships known assets (xray/mtg binaries, the bundled
-        # geoip*/geosite*.dat sets) -- anything else in bin/ was placed there
-        # by the admin (e.g. a hand-added custom geoip/geosite file referenced
-        # from a routing rule via "ext:<file>:<code>") and would otherwise be
-        # silently deleted on every update, breaking Xray at next start with
-        # "failed to open <file>: no such file or directory" for any routing
-        # rule that references it. Moved aside rather than copied: a rename
-        # on the same filesystem is atomic (no truncated file if disk space
-        # runs out mid-copy, unlike `cp`) and keeps the snapshot under
-        # /usr/local rather than a separate, possibly small/tmpfs $TMPDIR.
+        # bin/ is wiped by the extraction below; anything in it the release does
+        # not ship was placed by the admin (e.g. a custom geoip/geosite file used
+        # by a routing rule), so move it aside and restore it afterwards. A rename
+        # is atomic and stays on the same filesystem.
         if [[ -d "${xui_folder}/bin" ]]; then
-            custom_bin_backup="${xui_folder%/x-ui}/x-ui-bin-backup.$$"
-            rm -rf "${custom_bin_backup}"
+            custom_bin_backup="${xui_folder%/*}/jasem_x_ui-bin-backup.$$"
+            rm -rf "${custom_bin_backup:?}"
             if ! mv "${xui_folder}/bin" "${custom_bin_backup}"; then
                 custom_bin_backup=""
                 echo -e "${yellow}Could not back up bin/ -- custom files there will not be preserved across this update${plain}"
             fi
         fi
-        # Sole cleanup path for the backup from here on -- covers both the
-        # two `exit 1`s below (extraction/binary-missing failures) and an
-        # interrupted update (Ctrl-C, signal) before the restore runs.
-        # Cleared once the restore below finishes normally.
-        trap '[[ -n "${custom_bin_backup}" ]] && rm -rf "${custom_bin_backup}"' EXIT INT TERM
-        rm ${xui_folder}/ -rf
+        # Sole cleanup path for the backup: covers the exit 1s below and an
+        # interrupted install; cleared once the restore finishes normally.
+        trap '[[ -n "${custom_bin_backup}" ]] && rm -rf "${custom_bin_backup:?}"' EXIT INT TERM
+        rm -rf "${xui_folder:?}"/
     fi
 
     # Extract resources and set permissions
-    tar zxvf x-ui-linux-$(arch).tar.gz
+    tar zxf "${xui_archive}" -C "${xui_folder%/*}"
     if [[ $? -ne 0 ]]; then
-        rm x-ui-linux-$(arch).tar.gz -f
-        rm -f "${xui_script_temp}"
-        echo -e "${red}Failed to extract the x-ui release archive -- the previous installation has already been removed, so the panel will not start until this is fixed; try running the installer again${plain}"
+        rm -f "${xui_archive}"
+        echo -e "${red}Failed to extract the release archive -- the previous installation has already been removed, so the panel will not start until this is fixed; try running the installer again${plain}"
         exit 1
     fi
-    rm x-ui-linux-$(arch).tar.gz -f
+    rm -f "${xui_archive}"
 
-    cd x-ui
+    cd "${xui_folder}" 2> /dev/null
     if [[ $? -ne 0 || ! -s x-ui ]]; then
-        rm -f "${xui_script_temp}"
-        echo -e "${red}Extracted x-ui archive is missing the x-ui binary -- the previous installation has already been removed, so the panel will not start until this is fixed; try running the installer again${plain}"
+        echo -e "${red}Extracted archive is missing the x-ui binary -- the previous installation has already been removed, so the panel will not start until this is fixed; try running the installer again${plain}"
         exit 1
     fi
-    chmod +x x-ui
-    chmod +x x-ui.sh
-
-    # Check the system's architecture and rename the file accordingly.
-    # The panel binary maps GOARCH=arm to "arm32" (internal/xray/process.go),
-    # so the Xray binary must be named xray-linux-arm32; mtg keeps plain "arm".
-    if [[ $(arch) == "armv5" || $(arch) == "armv6" || $(arch) == "armv7" ]]; then
-        mv bin/xray-linux-$(arch) bin/xray-linux-arm32
-        chmod +x bin/xray-linux-arm32
-        if [[ -f bin/mtg-linux-$(arch) ]]; then
-            mv bin/mtg-linux-$(arch) bin/mtg-linux-arm
-            chmod +x bin/mtg-linux-arm
-        fi
+    if [[ "${tag_version}" == "local" || "${tag_version}" == "mirror" ]]; then
+        tag_version="v$(./x-ui -v 2> /dev/null | tr -d '[:space:]')"
     fi
-    chmod +x x-ui bin/xray-linux-$(arch)
-    if [[ -f bin/mtg-linux-arm ]]; then
-        chmod +x bin/mtg-linux-arm
-    elif [[ -f bin/mtg-linux-$(arch) ]]; then
-        chmod +x bin/mtg-linux-$(arch)
-    fi
+    chmod +x x-ui x-ui.sh bin/xray-linux-$(arch)
+    [[ -f bin/sing-box-linux-$(arch) ]] && chmod +x bin/sing-box-linux-$(arch)
+    [[ -f bin/mtg-linux-$(arch) ]] && chmod +x bin/mtg-linux-$(arch)
     if [[ -f bin/tuic-server ]]; then
         chmod +x bin/tuic-server
     else
@@ -1668,17 +1612,8 @@ install_x-ui() {
     fi
 
     # Restore anything from the old bin/ that the fresh release doesn't ship
-    # (custom geoip/geosite files, or anything else an admin hand-placed
-    # there) -- never overwrites a same-named file the new release provides,
-    # so bundled assets (geoip.dat, geoip_RU.dat, ...) still get the fresh
-    # per-release copy. Runs after the arch-rename above so xray-linux-arm32/
-    # mtg-linux-arm already exist under their final names there and aren't
-    # mistaken for custom files needing a restore. Skips paths the panel
-    # itself regenerates at runtime (config.json, mtproto/*.toml -- see
-    # internal/xray/process.go, internal/mtproto/manager.go): those aren't
-    # admin-placed, and restoring a stale one only resurrects dead state (an
-    # orphaned mtg config for a since-deleted inbound) or the wrong
-    # directory permissions.
+    # (never overwrites a same-named file, so bundled assets stay fresh). Skips
+    # paths the panel regenerates at runtime (config.json, mtproto/, tuic/).
     if [[ -n "${custom_bin_backup}" ]]; then
         local restored_custom_bin=()
         while IFS= read -r -d '' f; do
@@ -1692,7 +1627,7 @@ install_x-ui() {
                 restored_custom_bin+=("${rel}")
             fi
         done < <(find "${custom_bin_backup}" \( -type f -o -type l \) -print0)
-        rm -rf "${custom_bin_backup}"
+        rm -rf "${custom_bin_backup:?}"
         custom_bin_backup=""
         if [[ ${#restored_custom_bin[@]} -gt 0 ]]; then
             echo -e "${green}Restored custom file(s) in bin/ not shipped by this release: ${restored_custom_bin[*]}${plain}"
@@ -1700,125 +1635,57 @@ install_x-ui() {
     fi
     trap - EXIT INT TERM
 
-    # Update x-ui cli and se set permission
-    mv -f "${xui_script_temp}" /usr/bin/x-ui
+    # The CLI script ships inside the archive, so it always matches the binary.
+    local xui_script_temp="/usr/bin/jasem-x-ui-temp.$$"
+    cp -f x-ui.sh "${xui_script_temp}" && mv -f "${xui_script_temp}" /usr/bin/jasem-x-ui
     if [[ $? -ne 0 ]]; then
         rm -f "${xui_script_temp}"
-        echo -e "${red}Failed to install x-ui.sh${plain}"
+        echo -e "${red}Failed to install /usr/bin/jasem-x-ui${plain}"
         exit 1
     fi
-    chmod +x /usr/bin/x-ui
-    mkdir -p /var/log/x-ui
+    chmod +x /usr/bin/jasem-x-ui
+    mkdir -p /var/log/jasem_x_ui
     config_after_install
 
     # Etckeeper compatibility
     if [ -d "/etc/.git" ]; then
         if [ -f "/etc/.gitignore" ]; then
-            if ! grep -q "x-ui/x-ui.db" "/etc/.gitignore"; then
+            if ! grep -q "jasem_x_ui/x-ui.db" "/etc/.gitignore"; then
                 echo "" >> "/etc/.gitignore"
-                echo "x-ui/x-ui.db" >> "/etc/.gitignore"
+                echo "jasem_x_ui/x-ui.db" >> "/etc/.gitignore"
                 echo -e "${green}Added x-ui.db to /etc/.gitignore for etckeeper${plain}"
             fi
         else
-            echo "x-ui/x-ui.db" > "/etc/.gitignore"
+            echo "jasem_x_ui/x-ui.db" > "/etc/.gitignore"
             echo -e "${green}Created /etc/.gitignore and added x-ui.db for etckeeper${plain}"
         fi
     fi
 
     if [[ $release == "alpine" ]]; then
-        xui_rc_temp="/etc/init.d/x-ui.tmp.$$"
-        rm -f "${xui_rc_temp}"
-        curl -fLRo "${xui_rc_temp}" "https://raw.githubusercontent.com/MHSanaei/3x-ui/${script_ref}/x-ui.rc"
-        if [[ $? -ne 0 ]]; then
-            rm -f "${xui_rc_temp}"
-            echo -e "${red}Failed to download x-ui.rc${plain}"
+        if [[ ! -s x-ui.rc ]]; then
+            echo -e "${red}x-ui.rc is missing from the release archive${plain}"
             exit 1
         fi
-        if [[ ! -s "${xui_rc_temp}" ]]; then
-            rm -f "${xui_rc_temp}"
-            echo -e "${red}Downloaded x-ui.rc is empty${plain}"
-            exit 1
-        fi
-        mv -f "${xui_rc_temp}" /etc/init.d/x-ui
-        if [[ $? -ne 0 ]]; then
-            rm -f "${xui_rc_temp}"
-            echo -e "${red}Failed to install x-ui.rc${plain}"
-            exit 1
-        fi
-        chmod +x /etc/init.d/x-ui
-        rc-update add x-ui
-        rc-service x-ui start
+        cp -f x-ui.rc /etc/init.d/jasem_x_ui || exit 1
+        chmod +x /etc/init.d/jasem_x_ui
+        rc-update add jasem_x_ui
+        rc-service jasem_x_ui start
     else
-        # Install systemd service file
-        service_installed=false
-
-        if [ -f "x-ui.service" ]; then
-            echo -e "${green}Found x-ui.service in extracted files, installing...${plain}"
-            if _install_xui_service_unit "x-ui.service" "false"; then
-                service_installed=true
-            fi
-        fi
-
-        if [ "$service_installed" = false ]; then
-            case "${release}" in
-                ubuntu | debian | armbian)
-                    if [ -f "x-ui.service.debian" ]; then
-                        echo -e "${green}Found x-ui.service.debian in extracted files, installing...${plain}"
-                        if _install_xui_service_unit "x-ui.service.debian" "false"; then
-                            service_installed=true
-                        fi
-                    fi
-                    ;;
-                arch | manjaro | parch)
-                    if [ -f "x-ui.service.arch" ]; then
-                        echo -e "${green}Found x-ui.service.arch in extracted files, installing...${plain}"
-                        if _install_xui_service_unit "x-ui.service.arch" "false"; then
-                            service_installed=true
-                        fi
-                    fi
-                    ;;
-                *)
-                    if [ -f "x-ui.service.rhel" ]; then
-                        echo -e "${green}Found x-ui.service.rhel in extracted files, installing...${plain}"
-                        if _install_xui_service_unit "x-ui.service.rhel" "false"; then
-                            service_installed=true
-                        fi
-                    fi
-                    ;;
-            esac
-        fi
-
-        # If service file not found in tar.gz, download from GitHub
-        if [ "$service_installed" = false ]; then
-            echo -e "${yellow}Service files not found in tar.gz, downloading from GitHub...${plain}"
-            case "${release}" in
-                ubuntu | debian | armbian)
-                    service_unit_url="https://raw.githubusercontent.com/MHSanaei/3x-ui/${script_ref}/x-ui.service.debian"
-                    ;;
-                arch | manjaro | parch)
-                    service_unit_url="https://raw.githubusercontent.com/MHSanaei/3x-ui/${script_ref}/x-ui.service.arch"
-                    ;;
-                *)
-                    service_unit_url="https://raw.githubusercontent.com/MHSanaei/3x-ui/${script_ref}/x-ui.service.rhel"
-                    ;;
-            esac
-
-            if ! _install_xui_service_unit "$service_unit_url" "true"; then
-                echo -e "${red}Failed to install x-ui.service from GitHub (${script_ref}) -- the release tarball did not ship one either${plain}"
-                exit 1
-            fi
-            service_installed=true
-        fi
-
-        if [ "$service_installed" = true ]; then
+        # Install the systemd unit shipped in the archive
+        local unit_src="x-ui.service.rhel"
+        case "${release}" in
+            ubuntu | debian | armbian) unit_src="x-ui.service.debian" ;;
+            arch | manjaro | parch) unit_src="x-ui.service.arch" ;;
+        esac
+        if [[ -f "${unit_src}" ]] && _install_xui_service_unit "${unit_src}" "false"; then
             echo -e "${green}Setting up systemd unit...${plain}"
-            chown root:root ${xui_service}/x-ui.service > /dev/null 2>&1
-            chmod 644 ${xui_service}/x-ui.service > /dev/null 2>&1
+            chown root:root ${xui_service}/jasem_x_ui.service > /dev/null 2>&1
+            chmod 644 ${xui_service}/jasem_x_ui.service > /dev/null 2>&1
             systemctl daemon-reload
-            systemctl enable x-ui
-            systemctl start x-ui
+            systemctl enable jasem_x_ui
+            systemctl start jasem_x_ui
         else
-            echo -e "${red}Failed to install x-ui.service file${plain}"
+            echo -e "${red}Failed to install jasem_x_ui.service (${unit_src} missing from the archive?)${plain}"
             exit 1
         fi
     fi
@@ -1827,28 +1694,25 @@ install_x-ui() {
     # works out of the box (no-op when XUI_ENABLE_FAIL2BAN=false). Never fatal.
     setup_fail2ban
 
-    echo -e "${green}x-ui ${tag_version}${plain} installation finished, it is running now..."
+    echo -e "${green}jasem_x_ui ${tag_version}${plain} installation finished, it is running now..."
     echo -e ""
-    echo -e "┌───────────────────────────────────────────────────────┐
-│  ${blue}x-ui control menu usages (subcommands):${plain}              │
-│                                                       │
-│  ${blue}x-ui${plain}              - Admin Management Script          │
-│  ${blue}x-ui start${plain}        - Start                            │
-│  ${blue}x-ui stop${plain}         - Stop                             │
-│  ${blue}x-ui restart${plain}      - Restart                          │
-│  ${blue}x-ui status${plain}       - Current Status                   │
-│  ${blue}x-ui settings${plain}     - Current Settings                 │
-│  ${blue}x-ui enable${plain}       - Enable Autostart on OS Startup   │
-│  ${blue}x-ui disable${plain}      - Disable Autostart on OS Startup  │
-│  ${blue}x-ui log${plain}          - Check logs                       │
-│  ${blue}x-ui banlog${plain}       - Check Fail2ban ban logs          │
-│  ${blue}x-ui update${plain}       - Update                           │
-│  ${blue}x-ui legacy${plain}       - Legacy version                   │
-│  ${blue}x-ui install${plain}      - Install                          │
-│  ${blue}x-ui uninstall${plain}    - Uninstall                        │
-└───────────────────────────────────────────────────────┘"
+    echo -e "${blue}jasem-x-ui control menu usages (subcommands):${plain}
+  ${blue}jasem-x-ui${plain}              - Admin Management Script
+  ${blue}jasem-x-ui start${plain}        - Start
+  ${blue}jasem-x-ui stop${plain}         - Stop
+  ${blue}jasem-x-ui restart${plain}      - Restart
+  ${blue}jasem-x-ui status${plain}       - Current Status
+  ${blue}jasem-x-ui settings${plain}     - Current Settings
+  ${blue}jasem-x-ui enable${plain}       - Enable Autostart on OS Startup
+  ${blue}jasem-x-ui disable${plain}      - Disable Autostart on OS Startup
+  ${blue}jasem-x-ui log${plain}          - Check logs
+  ${blue}jasem-x-ui banlog${plain}       - Check Fail2ban ban logs
+  ${blue}jasem-x-ui update${plain}       - Update (offline: update --local <tar.gz>)
+  ${blue}jasem-x-ui legacy${plain}       - Legacy version
+  ${blue}jasem-x-ui install${plain}      - Install
+  ${blue}jasem-x-ui uninstall${plain}    - Uninstall"
 }
 
 echo -e "${green}Running...${plain}"
 install_base
-install_x-ui $1
+install_x-ui
