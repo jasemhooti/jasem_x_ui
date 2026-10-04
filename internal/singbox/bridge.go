@@ -247,3 +247,35 @@ func Bridge(cfg *xray.Config) error {
 	cfg.OutboundConfigs = b
 	return nil
 }
+
+// BridgeLive rewrites singbox outbounds in a side config (e.g. the outbound
+// tester) to the live sidecar's ports without touching the sidecar.
+func BridgeLive(outbounds []any) []any {
+	portsMu.Lock()
+	live := make(map[string]int, len(assigned))
+	for tag, p := range assigned {
+		live[tag] = p
+	}
+	portsMu.Unlock()
+	sidecarMu.Lock()
+	running := sidecarProc != nil && sidecarProc.IsRunning()
+	sidecarMu.Unlock()
+
+	out := make([]any, 0, len(outbounds))
+	for _, ob := range outbounds {
+		m, ok := ob.(map[string]any)
+		p, _ := m["protocol"].(string)
+		if !ok || !strings.EqualFold(p, Protocol) {
+			out = append(out, ob)
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		if port, ok := live[tag]; ok && running {
+			out = append(out, replacementFor(tag, port))
+			continue
+		}
+		// Unsaved or not running: keep the tag valid so the rest of the batch starts.
+		out = append(out, map[string]any{"tag": tag, "protocol": "blackhole"})
+	}
+	return out
+}

@@ -1064,7 +1064,13 @@ config_after_install() {
         "https://check-host.net/ip"
     )
     local server_ip=""
+    # A public address on the NIC is the server's own; lookup services can see a NAT/tunnel exit instead.
+    local nic_ip=$(ip -4 route get 1.1.1.1 2> /dev/null | grep -Eo 'src [0-9.]+' | awk '{print $2}')
+    if [[ "${nic_ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && ! [[ "${nic_ip}" =~ ^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.) ]]; then
+        server_ip="${nic_ip}"
+    fi
     for ip_address in "${URL_lists[@]}"; do
+        [[ -n "$server_ip" ]] && break
         local response=$(curl -s -w "\n%{http_code}" --max-time 3 "${ip_address}" 2> /dev/null)
         local http_code=$(echo "$response" | tail -n1)
         local ip_result=$(echo "$response" | head -n-1 | tr -d '[:space:]"')

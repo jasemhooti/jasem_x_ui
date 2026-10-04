@@ -20,6 +20,9 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgnet"
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
+	"github.com/mhsanaei/3x-ui/v3/internal/jasem/compat"
+	"github.com/mhsanaei/3x-ui/v3/internal/jasem/fragment"
+	"github.com/mhsanaei/3x-ui/v3/internal/singbox"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/json_util"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 )
@@ -413,7 +416,7 @@ func buildBatchTestConfig(items []*httpBatchItem, allOutbounds []any, ports []in
 			bridged = append(bridged, replacement)
 		}
 	}
-	outbounds = bridged
+	outbounds = singbox.BridgeLive(bridged)
 	for _, ob := range outbounds {
 		outbound, ok := ob.(map[string]any)
 		if !ok {
@@ -459,7 +462,7 @@ func buildBatchTestConfig(items []*httpBatchItem, allOutbounds []any, ports []in
 		"dnsLog":   false,
 	})
 
-	return &xray.Config{
+	cfg := &xray.Config{
 		LogConfig:       json_util.RawMessage(logJSON),
 		InboundConfigs:  inbounds,
 		OutboundConfigs: json_util.RawMessage(outboundsJSON),
@@ -467,6 +470,11 @@ func buildBatchTestConfig(items []*httpBatchItem, allOutbounds []any, ports []in
 		Policy:          json_util.RawMessage(`{}`),
 		Stats:           json_util.RawMessage(`{}`),
 	}
+	// Same fragment/core-compat rewrites the live config gets, or the temp
+	// core can reject what the running one accepts.
+	_ = fragment.Ensure(cfg)
+	_ = compat.Apply(cfg)
+	return cfg
 }
 
 // outboundsContainTag reports whether any outbound in the slice has the given tag.
