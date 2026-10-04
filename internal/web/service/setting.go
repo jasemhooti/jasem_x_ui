@@ -95,7 +95,7 @@ var defaultValueMap = map[string]string{
 	"tgBotBackup":                 "false",
 	"tgCpu":                       "80",
 	"tgMemory":                    "80",
-	"tgLang":                      "en-US",
+	"tgLang":                      "fa-IR",
 	"twoFactorEnable":             "false",
 	"twoFactorToken":              "",
 	"happLinkEnable":              "false",
