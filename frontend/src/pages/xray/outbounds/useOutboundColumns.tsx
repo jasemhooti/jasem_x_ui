@@ -39,6 +39,7 @@ import {
   testModeLabel,
   testResult,
   trafficFor,
+  outboundProtocolLabel,
 } from './outbounds-tab-helpers';
 
 interface OutboundColumnsParams {
@@ -168,7 +169,7 @@ export function useOutboundColumns({
               <span className="tag-name">{record.tag}</span>
             </Tooltip>
             <div className="protocol-line">
-              <Tag color="green">{record.protocol}</Tag>
+              <Tag color="green">{outboundProtocolLabel(record)}</Tag>
               {[Protocols.VMess, Protocols.VLESS, Protocols.Trojan, Protocols.Shadowsocks].some(
                 (id) => isOutboundProtocol(record, id),
               ) && (

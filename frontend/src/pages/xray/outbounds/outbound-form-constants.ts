@@ -10,6 +10,17 @@ import {
 import { OutboundDomainStrategySchema } from '@/schemas/protocols/outbound';
 import { SSMethodSchema } from '@/schemas/protocols/shared/shadowsocks';
 
+// Must match internal/jasem/fragment.Tag on the backend.
+export const FRAGMENT_DIALER_TAG = 'jasem-fragment';
+// Outbounds that never dial out through sockopt, so a fragment switch is meaningless.
+export const NO_FRAGMENT_PROTOCOLS = new Set([
+  'singbox',
+  'freedom',
+  'blackhole',
+  'dns',
+  'loopback',
+]);
+
 export const PROTOCOL_OPTIONS = Object.values(Protocols).map((p) => ({ value: p, label: p }));
 export const SECURITY_OPTIONS = Object.values(USERS_SECURITY).map((v) => ({ value: v, label: v }));
 export const FLOW_OPTIONS = Object.values(TLS_FLOW_CONTROL).map((v) => ({ value: v, label: v }));

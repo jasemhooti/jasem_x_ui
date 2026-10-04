@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "يوجه حركة المرور عبر أحد موازنات الحمل المهيأة"
       },
       "outboundForm": {
+        "fragment": "التجزئة (Fragment)",
+        "fragmentHint": "تمرير اتصال TCP لهذا المخرج عبر مُجزِّئ TLS المدمج (jasem-fragment) لتجاوز DPI.",
+        "singboxJsonOnly": "هذا مخرج sing-box. عدّله من تبويب JSON.",
         "tagDuplicate": "الوسم مستخدم بالفعل من قبل صادر آخر",
         "tagRequired": "الوسم مطلوب",
         "tagPlaceholder": "وسم-فريد",
@@ -1851,6 +1854,9 @@
         "moveToTop": "نقل إلى الأعلى"
       },
       "outboundSub": {
+        "fragment": "التجزئة (Fragment)",
+        "fragmentHint": "تمرير جميع مخارج هذا الاشتراك عبر مُجزِّئ TLS.",
+        "skippedCount": "{count} أسطر متجاوزة",
         "manage": "الاشتراكات",
         "title": "اشتراكات الصادرات",
         "remark": "ملاحظة (اختياري)",

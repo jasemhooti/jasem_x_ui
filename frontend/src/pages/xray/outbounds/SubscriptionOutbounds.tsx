@@ -23,6 +23,7 @@ import {
   testModeLabel,
   testResult,
   trafficFor,
+  outboundProtocolLabel,
 } from './outbounds-tab-helpers';
 
 interface SubscriptionOutboundsProps {
@@ -61,7 +62,7 @@ export default function SubscriptionOutbounds({
         <span className="tag-name">{record.tag || '—'}</span>
       </Tooltip>
       <div className="protocol-line">
-        <Tag color="green">{record.protocol}</Tag>
+        <Tag color="green">{outboundProtocolLabel(record)}</Tag>
         {[Protocols.VMess, Protocols.VLESS, Protocols.Trojan, Protocols.Shadowsocks].includes(
           record.protocol as never,
         ) && (

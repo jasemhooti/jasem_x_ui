@@ -58,29 +58,22 @@ import type {
 import './OutboundsTab.css';
 
 import type { OutboundRow } from './outbounds-tab-types';
-import { originalOutboundIndex } from './outbounds-tab-helpers';
+import { originalOutboundIndex, outboundProtocolLabel } from './outbounds-tab-helpers';
 import { useOutboundColumns } from './useOutboundColumns';
 import OutboundCardList from './OutboundCardList';
 import SubscriptionOutbounds from './SubscriptionOutbounds';
+import SkippedLines from './SkippedLines';
+import type { OutboundSub, SkippedLine } from '@/schemas/api/outbound-sub';
 
 const defaultOutboundSubscriptionUserAgent = '3x-ui-outbound-sub/1.0';
 
-interface OutboundSub {
-  id: number;
-  remark?: string;
-  url?: string;
-  enabled?: boolean;
-  allowPrivate?: boolean;
-  allowInsecure?: boolean;
-  userAgent?: string;
-  prepend?: boolean;
-  priority?: number;
-  tagPrefix?: string;
-  updateInterval?: number;
-  lastUpdated?: number;
-  lastError?: string;
-  outboundCount?: number;
-}
+type PreviewOutbound = {
+  tag?: string;
+  protocol?: string;
+  settings?: Record<string, unknown>;
+};
+// The backend may return a bare outbound list or {outbounds, skipped}.
+type PreviewObj = PreviewOutbound[] | { outbounds?: PreviewOutbound[]; skipped?: SkippedLine[] };
 
 interface OutboundsTabProps {
   templateSettings: XraySettingsValue | null;
@@ -146,6 +139,7 @@ export default function OutboundsTab({
     allowPrivate: false,
     allowInsecure: false,
     prepend: false,
+    fragment: false,
   });
   const [editingSubId, setEditingSubId] = useState<number | null>(null);
   const [savingSub, setSavingSub] = useState(false);
@@ -153,9 +147,10 @@ export default function OutboundsTab({
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [previewData, setPreviewData] = useState<{ tag?: string; protocol?: string }[] | null>(
-    null,
-  );
+  const [previewData, setPreviewData] = useState<
+    { tag?: string; protocol?: string; settings?: Record<string, unknown> }[] | null
+  >(null);
+  const [previewSkipped, setPreviewSkipped] = useState<SkippedLine[]>([]);
 
   // Convenience: expose hours/minutes for the interval input
   const intervalHours = Math.floor((newSub.updateInterval || 600) / 3600);
@@ -345,6 +340,7 @@ export default function OutboundsTab({
     allowPrivate?: boolean;
     allowInsecure?: boolean;
     prepend?: boolean;
+    fragment?: boolean;
   }) {
     return {
       remark: src.remark ?? '',
@@ -356,6 +352,7 @@ export default function OutboundsTab({
       allowPrivate: src.allowPrivate ?? false,
       allowInsecure: src.allowInsecure ?? false,
       prepend: src.prepend ?? false,
+      fragment: src.fragment ?? false,
     };
   }
   function resetSubForm() {
@@ -369,9 +366,11 @@ export default function OutboundsTab({
       allowPrivate: false,
       allowInsecure: false,
       prepend: false,
+      fragment: false,
     });
     setEditingSubId(null);
     setPreviewData(null);
+    setPreviewSkipped([]);
   }
   function openEditSub(sub: OutboundSub) {
     setNewSub({
@@ -384,9 +383,11 @@ export default function OutboundsTab({
       allowPrivate: sub.allowPrivate ?? false,
       allowInsecure: sub.allowInsecure ?? false,
       prepend: sub.prepend ?? false,
+      fragment: sub.fragment ?? false,
     });
     setEditingSubId(sub.id);
     setPreviewData(null);
+    setPreviewSkipped([]);
   }
   async function saveSub() {
     if (!newSub.url.trim()) {
@@ -429,19 +430,19 @@ export default function OutboundsTab({
     }
     setPreviewing(true);
     setPreviewData(null);
+    setPreviewSkipped([]);
     try {
-      const r = await HttpUtil.post<{ tag?: string; protocol?: string }[]>(
-        '/panel/api/xray/outbound-subs/parse',
-        {
-          url: newSub.url,
-          userAgent: newSub.userAgent,
-          allowPrivate: newSub.allowPrivate,
-          allowInsecure: newSub.allowInsecure,
-        },
-      );
-      if (r?.success && Array.isArray(r.obj)) {
-        setPreviewData(r.obj);
-        if (r.obj.length === 0) messageApi.info(t('pages.xray.outboundSub.previewEmpty'));
+      const r = await HttpUtil.post<PreviewObj>('/panel/api/xray/outbound-subs/parse', {
+        url: newSub.url,
+        userAgent: newSub.userAgent,
+        allowPrivate: newSub.allowPrivate,
+        allowInsecure: newSub.allowInsecure,
+      });
+      const outbounds = Array.isArray(r?.obj) ? r.obj : r?.obj?.outbounds;
+      if (r?.success && Array.isArray(outbounds)) {
+        setPreviewData(outbounds);
+        setPreviewSkipped(Array.isArray(r.obj) ? [] : (r.obj?.skipped ?? []));
+        if (outbounds.length === 0) messageApi.info(t('pages.xray.outboundSub.previewEmpty'));
       } else {
         messageApi.error(r?.msg || t('pages.xray.outboundSub.previewEmpty'));
       }
@@ -564,8 +565,18 @@ export default function OutboundsTab({
                 trigger={['click']}
                 menu={{
                   items: [
-                    { key: 'warp', icon: <CloudOutlined />, label: 'WARP', onClick: onShowWarp },
-                    { key: 'nord', icon: <ApiOutlined />, label: 'NordVPN', onClick: onShowNord },
+                    {
+                      key: 'warp',
+                      icon: <CloudOutlined />,
+                      label: 'WARP',
+                      onClick: onShowWarp,
+                    },
+                    {
+                      key: 'nord',
+                      icon: <ApiOutlined />,
+                      label: 'NordVPN',
+                      onClick: onShowNord,
+                    },
                     {
                       key: 'pia',
                       icon: <ApiOutlined />,
@@ -708,7 +719,14 @@ export default function OutboundsTab({
         <Space orientation="vertical" style={{ width: '100%' }} size="large">
           <div>
             {editingSubId != null && (
-              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
                 <Tag color="blue">{t('edit')}</Tag>
                 <span style={{ fontWeight: 600 }}>{newSub.remark || newSub.url}</span>
               </div>
@@ -797,6 +815,15 @@ export default function OutboundsTab({
                   {t('pages.xray.outboundSub.prependHint')}
                 </div>
               </Form.Item>
+              <Form.Item label={t('pages.xray.outboundSub.fragment')}>
+                <Switch
+                  checked={newSub.fragment}
+                  onChange={(v) => setNewSub({ ...newSub, fragment: v })}
+                />
+                <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                  {t('pages.xray.outboundSub.fragmentHint')}
+                </div>
+              </Form.Item>
               <Space wrap>
                 <Button
                   type="primary"
@@ -811,6 +838,7 @@ export default function OutboundsTab({
                 </Button>
                 {editingSubId != null && <Button onClick={resetSubForm}>{t('cancel')}</Button>}
               </Space>
+              {previewData && <SkippedLines skipped={previewSkipped} />}
               {previewData && previewData.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>
@@ -828,7 +856,7 @@ export default function OutboundsTab({
                     {previewData.map((o, i) => (
                       <Tag key={i}>
                         {o?.tag || '—'}
-                        {o?.protocol ? ` · ${o.protocol}` : ''}
+                        {o?.protocol ? ` · ${outboundProtocolLabel(o)}` : ''}
                       </Tag>
                     ))}
                   </div>
@@ -876,6 +904,10 @@ export default function OutboundsTab({
                 rowKey={(r) => r.id}
                 pagination={false}
                 scroll={{ x: true }}
+                expandable={{
+                  rowExpandable: (r: OutboundSub) => !!r.skipped?.length,
+                  expandedRowRender: (r: OutboundSub) => <SkippedLines skipped={r.skipped} />,
+                }}
                 columns={[
                   {
                     title: '',
@@ -919,7 +951,18 @@ export default function OutboundsTab({
                     dataIndex: 'outboundCount',
                     key: 'outboundCount',
                     align: 'center',
-                    render: (v) => v ?? 0,
+                    render: (v, r: OutboundSub) => (
+                      <>
+                        {v ?? 0}
+                        {r.skipped && r.skipped.length > 0 && (
+                          <Tag color="orange" style={{ marginInlineStart: 6 }}>
+                            {t('pages.xray.outboundSub.skippedCount', {
+                              count: r.skipped.length,
+                            })}
+                          </Tag>
+                        )}
+                      </>
+                    ),
                   },
                   {
                     title: t('status'),

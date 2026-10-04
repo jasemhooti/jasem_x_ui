@@ -881,6 +881,8 @@ export interface SupportedLanguage {
 
 export type LanguageScope = 'panel' | 'subscription';
 
+const DEFAULT_LANGUAGE = 'fa-IR';
+
 const languageCookieNames: Record<LanguageScope, string> = {
   panel: 'lang',
   subscription: 'subLang',
@@ -916,39 +918,8 @@ export class LanguageManager {
       }
     }
 
-    if (window.navigator) {
-      const nav = window.navigator as Navigator & { userLanguage?: string };
-      lang = nav.language || nav.userLanguage || '';
-
-      const simularLangs: [string, string][] = [
-        ['ar', LanguageManager.supportedLanguages[0].value],
-        ['fa', LanguageManager.supportedLanguages[2].value],
-        ['ja', LanguageManager.supportedLanguages[5].value],
-        ['ru', LanguageManager.supportedLanguages[6].value],
-        ['vi', LanguageManager.supportedLanguages[7].value],
-        ['es', LanguageManager.supportedLanguages[8].value],
-        ['id', LanguageManager.supportedLanguages[9].value],
-        ['uk', LanguageManager.supportedLanguages[10].value],
-        ['tr', LanguageManager.supportedLanguages[11].value],
-        ['pt', LanguageManager.supportedLanguages[12].value],
-      ];
-
-      simularLangs.forEach((pair) => {
-        if (lang === pair[0]) {
-          lang = pair[1];
-        }
-      });
-
-      if (LanguageManager.isSupportLanguage(lang)) {
-        CookieManager.setCookie(cookieName, lang, 365);
-      } else {
-        CookieManager.setCookie(cookieName, 'en-US', 365);
-        window.location.reload();
-      }
-    } else {
-      CookieManager.setCookie(cookieName, 'en-US', 365);
-      window.location.reload();
-    }
+    lang = DEFAULT_LANGUAGE;
+    CookieManager.setCookie(cookieName, lang, 365);
 
     return lang;
   }

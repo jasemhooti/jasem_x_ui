@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "ترافیک را از یکی از بالانسرهای پیکربندی‌شده عبور می‌دهد"
       },
       "outboundForm": {
+        "fragment": "فرگمنت",
+        "fragmentHint": "اتصال TCP این خروجی از طریق فرگمنت TLS داخلی (jasem-fragment) برقرار می‌شود تا از تشخیص DPI عبور کند.",
+        "singboxJsonOnly": "این یک خروجی sing-box است. آن را از تب JSON ویرایش کنید.",
         "tagDuplicate": "این تگ توسط خروجی دیگری استفاده شده است",
         "tagRequired": "تگ الزامی است",
         "tagPlaceholder": "تگ-منحصربه‌فرد",
@@ -1851,6 +1854,9 @@
         "moveToTop": "انتقال به بالا"
       },
       "outboundSub": {
+        "fragment": "فرگمنت",
+        "fragmentHint": "همه خروجی‌های این اشتراک از طریق فرگمنت TLS برقرار شوند.",
+        "skippedCount": "{count} خط ردشده",
         "manage": "سابسکریپشن‌ها",
         "title": "سابسکریپشن‌های خروجی",
         "remark": "نام (اختیاری)",

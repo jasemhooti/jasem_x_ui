@@ -190,6 +190,13 @@ export const LoopbackOutboundFormSettingsSchema = z.object({
 });
 export type LoopbackOutboundFormSettings = z.infer<typeof LoopbackOutboundFormSettingsSchema>;
 
+// sing-box pseudo-outbound: the whole sing-box object lives in settings.outbound
+// and is edited via the JSON tab only, so the form never splits it.
+export const SingboxOutboundFormSettingsSchema = z.object({
+  outbound: z.record(z.string(), z.unknown()).default({}),
+});
+export type SingboxOutboundFormSettings = z.infer<typeof SingboxOutboundFormSettingsSchema>;
+
 // Discriminated union on `protocol`. Same tagged-wrapper pattern as the
 // inbound side: each branch is { protocol: literal, settings: <flat> }.
 export const OutboundFormSettingsSchema = z.discriminatedUnion('protocol', [
@@ -206,6 +213,7 @@ export const OutboundFormSettingsSchema = z.discriminatedUnion('protocol', [
   z.object({ protocol: z.literal('blackhole'), settings: BlackholeOutboundFormSettingsSchema }),
   z.object({ protocol: z.literal('dns'), settings: DnsOutboundFormSettingsSchema }),
   z.object({ protocol: z.literal('loopback'), settings: LoopbackOutboundFormSettingsSchema }),
+  z.object({ protocol: z.literal('singbox'), settings: SingboxOutboundFormSettingsSchema }),
 ]);
 export type OutboundFormSettings = z.infer<typeof OutboundFormSettingsSchema>;
 

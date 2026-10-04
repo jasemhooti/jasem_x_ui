@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "Encaminha tráfego por um dos balanceadores configurados"
       },
       "outboundForm": {
+        "fragment": "Fragmentação",
+        "fragmentHint": "Encaminha a conexão TCP desta saída pelo discador de fragmentação TLS integrado (jasem-fragment) para evitar DPI.",
+        "singboxJsonOnly": "Esta é uma saída sing-box. Edite-a na aba JSON.",
         "tagDuplicate": "Tag já usada por outra saída",
         "tagRequired": "A tag é obrigatória",
         "tagPlaceholder": "tag-única",
@@ -1851,6 +1854,9 @@
         "moveToTop": "Mover para o topo"
       },
       "outboundSub": {
+        "fragment": "Fragmentação",
+        "fragmentHint": "Encaminha todas as saídas desta assinatura pelo discador de fragmentação TLS.",
+        "skippedCount": "{count} linhas ignoradas",
         "manage": "Assinaturas",
         "title": "Assinaturas de Saída",
         "remark": "Observação (opcional)",

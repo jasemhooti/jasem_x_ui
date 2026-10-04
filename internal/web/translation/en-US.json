@@ -1895,6 +1895,9 @@
         "balancerTagTooltip": "Routes traffic through one of the configured load balancers"
       },
       "outboundForm": {
+        "fragment": "Fragment",
+        "fragmentHint": "Route this outbound's TCP connection through the built-in TLS fragment dialer (jasem-fragment) to evade DPI.",
+        "singboxJsonOnly": "This is a sing-box outbound. Edit it from the JSON tab.",
         "tagDuplicate": "Tag already used by another outbound",
         "tagRequired": "Tag is required",
         "tagPlaceholder": "unique-tag",
@@ -1969,6 +1972,9 @@
         "moveToTop": "Move to top"
       },
       "outboundSub": {
+        "fragment": "Fragment",
+        "fragmentHint": "Route all outbounds of this subscription through the TLS fragment dialer.",
+        "skippedCount": "{count} skipped lines",
         "manage": "Subscriptions",
         "title": "Outbound Subscriptions",
         "remark": "Remark (optional)",

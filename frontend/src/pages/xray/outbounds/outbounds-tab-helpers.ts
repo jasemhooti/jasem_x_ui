@@ -23,6 +23,16 @@ export function originalOutboundIndex(rows: OutboundRow[], positionalIndex: numb
   return row ? row.key : positionalIndex;
 }
 
+// A singbox pseudo-outbound shows its inner sing-box type, not "singbox".
+export function outboundProtocolLabel(o: {
+  protocol?: string;
+  settings?: Record<string, unknown>;
+}): string {
+  if (o.protocol?.toLowerCase() !== 'singbox') return o.protocol ?? '';
+  const inner = o.settings?.outbound as { type?: unknown } | undefined;
+  return typeof inner?.type === 'string' && inner.type ? inner.type : 'singbox';
+}
+
 export function outboundAddresses(o: OutboundRow): string[] {
   const settings = o.settings as Record<string, unknown> | undefined;
   switch (true) {
@@ -50,6 +60,10 @@ export function outboundAddresses(o: OutboundRow): string[] {
       const port =
         (settings?.rewritePort as string | number) || (settings?.port as string | number) || '';
       return addr || port ? [`${addr}:${port}`] : [];
+    }
+    case isOutboundProtocol(o, 'singbox'): {
+      const inner = settings?.outbound as { server?: string; server_port?: number } | undefined;
+      return inner?.server ? [`${inner.server}:${inner.server_port ?? ''}`] : [];
     }
     case isOutboundProtocol(o, Protocols.Wireguard):
     case isOutboundProtocol(o, Protocols.AmneziaWG):

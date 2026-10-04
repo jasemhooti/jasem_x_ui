@@ -1777,6 +1777,9 @@
         "balancerTagTooltip": "通过其中一个已配置的负载均衡器路由流量"
       },
       "outboundForm": {
+        "fragment": "分片 (Fragment)",
+        "fragmentHint": "将此出站的 TCP 连接通过内置 TLS 分片拨号器（jasem-fragment）转发，以规避 DPI。",
+        "singboxJsonOnly": "这是 sing-box 出站，请在 JSON 标签页中编辑。",
         "tagDuplicate": "该标签已被其他出站使用",
         "tagRequired": "标签为必填项",
         "tagPlaceholder": "唯一标签",
@@ -1851,6 +1854,9 @@
         "moveToTop": "移到顶部"
       },
       "outboundSub": {
+        "fragment": "分片 (Fragment)",
+        "fragmentHint": "将此订阅的所有出站通过 TLS 分片拨号器转发。",
+        "skippedCount": "已跳过 {count} 行",
         "manage": "订阅",
         "title": "出站订阅",
         "remark": "备注（可选）",
