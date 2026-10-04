@@ -10,6 +10,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/amneziawg"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
+	"github.com/mhsanaei/3x-ui/v3/internal/singbox"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 )
@@ -73,6 +74,12 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 					return common.NewError("xray template config invalid: amneziawg outbound tag unreadable:", err)
 				}
 				if err := amneziawg.ValidateAmneziaWGOutbound(probe.Tag, outbound); err != nil {
+					return err
+				}
+				continue
+			}
+			if singbox.IsSingboxOutbound(outbound) {
+				if err := singbox.ValidateOutbound(outbound); err != nil {
 					return err
 				}
 				continue

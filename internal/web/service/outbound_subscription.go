@@ -16,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/singbox"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/link"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/netsafe"
@@ -38,7 +39,11 @@ func filterOutboundsRejectedByCore(label string, outbounds []any) ([]any, []stri
 	for _, ob := range outbounds {
 		raw, err := json.Marshal(ob)
 		if err == nil {
-			if buildErr := xray.ValidateOutboundConfig(raw); buildErr != nil && !shouldSkipLegacyUnencryptedOutboundRejection(coreVersion, buildErr) {
+			validate := xray.ValidateOutboundConfig
+			if singbox.IsSingboxOutbound(raw) {
+				validate = singbox.ValidateOutbound
+			}
+			if buildErr := validate(raw); buildErr != nil && !shouldSkipLegacyUnencryptedOutboundRejection(coreVersion, buildErr) {
 				tag := ""
 				if m, ok := ob.(map[string]any); ok {
 					tag, _ = m["tag"].(string)
