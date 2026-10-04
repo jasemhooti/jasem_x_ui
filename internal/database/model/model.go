@@ -1254,6 +1254,7 @@ type OutboundSubscription struct {
 	UpdateInterval       int    `json:"updateInterval" form:"updateInterval" gorm:"default:600"` // seconds between refreshes
 	Priority             int    `json:"priority" form:"priority" gorm:"default:0"`               // order among subscriptions in the merged outbounds (lower = earlier)
 	Prepend              bool   `json:"prepend" form:"prepend" gorm:"default:false"`             // place this subscription's outbounds before the manual template outbounds
+	Fragment             bool   `json:"fragment" form:"fragment" gorm:"default:false"`
 	LastUpdated          int64  `json:"lastUpdated" form:"lastUpdated"`
 	LastError            string `json:"lastError" form:"lastError"`
 	LastFetchedOutbounds string `json:"lastFetchedOutbounds" form:"lastFetchedOutbounds" gorm:"type:text"`

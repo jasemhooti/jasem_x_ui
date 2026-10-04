@@ -522,6 +522,7 @@ func (a *XraySettingController) createOutboundSub(c *gin.Context) {
 	allowPrivate := c.PostForm("allowPrivate") == "true"
 	allowInsecure := c.PostForm("allowInsecure") == "true"
 	prepend := c.PostForm("prepend") == "true"
+	fragment := c.PostForm("fragment") == "true"
 	intervalStr := c.PostForm("updateInterval")
 	interval := 600
 	if intervalStr != "" {
@@ -529,7 +530,7 @@ func (a *XraySettingController) createOutboundSub(c *gin.Context) {
 			interval = v
 		}
 	}
-	sub, err := a.OutboundSubscriptionService.Create(remark, rawURL, prefix, userAgent, enabled, interval, allowPrivate, prepend, allowInsecure)
+	sub, err := a.OutboundSubscriptionService.Create(remark, rawURL, prefix, userAgent, enabled, interval, allowPrivate, prepend, allowInsecure, fragment)
 	if err != nil {
 		jsonMsg(c, "Failed to create outbound subscription", err)
 		return
@@ -552,6 +553,7 @@ func (a *XraySettingController) updateOutboundSub(c *gin.Context) {
 	allowPrivate := c.PostForm("allowPrivate") == "true"
 	allowInsecure := c.PostForm("allowInsecure") == "true"
 	prepend := c.PostForm("prepend") == "true"
+	fragment := c.PostForm("fragment") == "true"
 	intervalStr := c.PostForm("updateInterval")
 	interval := 600
 	if intervalStr != "" {
@@ -559,7 +561,7 @@ func (a *XraySettingController) updateOutboundSub(c *gin.Context) {
 			interval = v
 		}
 	}
-	if err := a.OutboundSubscriptionService.Update(subID, remark, rawURL, prefix, userAgent, enabled, interval, allowPrivate, prepend, allowInsecure); err != nil {
+	if err := a.OutboundSubscriptionService.Update(subID, remark, rawURL, prefix, userAgent, enabled, interval, allowPrivate, prepend, allowInsecure, fragment); err != nil {
 		jsonMsg(c, "Failed to update outbound subscription", err)
 		return
 	}
@@ -633,19 +635,20 @@ func (a *XraySettingController) parseOutboundSubURL(c *gin.Context) {
 	// We don't have a direct "fetch once" that returns without storing, so we
 	// temporarily create a disabled row, refresh it, then delete. Cleaner would
 	// be to expose a pure ParseURL on the service, but this keeps the surface small.
-	tmp, err := svc.Create("preview", rawURL, "", userAgent, false, 600, allowPrivate, false, allowInsecure)
+	tmp, err := svc.Create("preview", rawURL, "", userAgent, false, 600, allowPrivate, false, allowInsecure, false)
 	if err != nil {
 		jsonMsg(c, "Failed to preview subscription", err)
 		return
 	}
 	obs, err := svc.Refresh(tmp.Id)
+	skipped := svc.Skipped(tmp.Id)
 	// best-effort cleanup
 	_ = svc.Delete(tmp.Id)
 	if err != nil {
 		jsonMsg(c, "Failed to fetch/parse subscription", err)
 		return
 	}
-	jsonObj(c, obs, nil)
+	jsonObj(c, gin.H{"outbounds": obs, "skipped": skipped}, nil)
 }
 
 func parseIntSafe(s string) (int, error) {

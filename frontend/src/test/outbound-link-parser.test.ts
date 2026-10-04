@@ -946,7 +946,7 @@ describe('parseOutboundLink dispatcher', () => {
   });
 
   it('returns null for an unknown scheme', () => {
-    expect(parseOutboundLink('socks5://user:pass@host:1080')).toBeNull();
+    expect(parseOutboundLink('warp://user:pass@host:1080')).toBeNull();
   });
 
   it('returns null for empty input', () => {
@@ -984,5 +984,73 @@ describe('obfs=gecko packetSize validation', () => {
     ['over cap', `${base}&minPacketSize=512&maxPacketSize=4096`],
   ])('drops the %s range', (_name, link) => {
     expect(packetSizeOf(link)).toBeUndefined();
+  });
+});
+
+describe('parseOutboundLink — case-insensitive schemes and new links', () => {
+  it('accepts upper-case schemes', () => {
+    const ob = parseOutboundLink('VLESS://u1@1.2.3.4:443?type=tcp&security=none#a');
+    expect(ob?.protocol).toBe('vless');
+    expect(parseOutboundLink('Trojan://pw@1.2.3.4:443#a')?.protocol).toBe('trojan');
+  });
+
+  it('parses socks and http proxy links', () => {
+    expect(parseOutboundLink('SOCKS5://alice:secret@1.2.3.4:1080#s')).toEqual({
+      protocol: 'socks',
+      tag: 's',
+      settings: { servers: [{ address: '1.2.3.4', port: 1080, users: [{ user: 'alice', pass: 'secret' }] }] },
+    });
+    const b64 = btoa('alice:secret');
+    const socks = parseOutboundLink(`socks://${b64}@1.2.3.4:1080#s`);
+    expect(socks?.settings).toEqual({
+      servers: [{ address: '1.2.3.4', port: 1080, users: [{ user: 'alice', pass: 'secret' }] }],
+    });
+    const https = parseOutboundLink('https://bob:pw@proxy.example.com:443#h');
+    expect(https?.protocol).toBe('http');
+    expect((https?.streamSettings as { security: string }).security).toBe('tls');
+    expect(parseOutboundLink('https://example.com/page')).toBeNull();
+  });
+
+  it('turns tuic, hysteria v1 and anytls into a singbox pseudo-outbound', () => {
+    expect(
+      parseOutboundLink('TUIC://uid:pw@1.2.3.4:443?congestion_control=bbr&alpn=h3&sni=a.com&allow_insecure=1#t'),
+    ).toEqual({
+      protocol: 'singbox',
+      tag: 't',
+      settings: {
+        outbound: {
+          server: '1.2.3.4',
+          server_port: 443,
+          type: 'tuic',
+          uuid: 'uid',
+          password: 'pw',
+          congestion_control: 'bbr',
+          tls: { enabled: true, server_name: 'a.com', insecure: true, alpn: ['h3'] },
+        },
+      },
+    });
+    expect(
+      parseOutboundLink('hysteria://1.2.3.4:4443?auth=tok&peer=a.com&upmbps=20&downmbps=80#h')?.settings,
+    ).toEqual({
+      outbound: {
+        server: '1.2.3.4',
+        server_port: 4443,
+        type: 'hysteria',
+        up_mbps: 20,
+        down_mbps: 80,
+        auth_str: 'tok',
+        tls: { enabled: true, server_name: 'a.com', alpn: ['h3'] },
+      },
+    });
+    expect(parseOutboundLink('anytls://pw@1.2.3.4:443?sni=a.com&fp=chrome#a')?.settings).toEqual({
+      outbound: {
+        server: '1.2.3.4',
+        server_port: 443,
+        type: 'anytls',
+        password: 'pw',
+        tls: { enabled: true, server_name: 'a.com', utls: { enabled: true, fingerprint: 'chrome' } },
+      },
+    });
+    expect(parseOutboundLink('hysteria://1.2.3.4:443?protocol=faketcp#x')).toBeNull();
   });
 });

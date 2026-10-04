@@ -46,7 +46,7 @@ func TestOutboundSubscriptionCreatePropagatesAllocationDatabaseFailures(t *testi
 		{name: "priority count query", tagPrefix: "custom-", operation: "priority allocation"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			created, err := (&OutboundSubscriptionService{}).Create("test", "https://1.1.1.1/sub", tc.tagPrefix, "", true, 600, false, false, false)
+			created, err := (&OutboundSubscriptionService{}).Create("test", "https://1.1.1.1/sub", tc.tagPrefix, "", true, 600, false, false, false, false)
 			if !errors.Is(err, errInjected) {
 				t.Fatalf("Create error = %v, want injected %s query failure", err, tc.operation)
 			}
@@ -89,7 +89,7 @@ func TestOutboundSubscriptionUpdatePropagatesPrefixQueryFailureWithoutMutation(t
 	})
 
 	err := (&OutboundSubscriptionService{}).Update(
-		original.Id, "after", "https://1.1.1.1/changed", "", "", false, 1200, false, false, false,
+		original.Id, "after", "https://1.1.1.1/changed", "", "", false, 1200, false, false, false, false,
 	)
 	if !errors.Is(err, errInjected) {
 		t.Fatalf("Update error = %v, want injected prefix query failure", err)
@@ -452,4 +452,60 @@ func outboundsContainTag(outbounds []any, tag string) bool {
 		}
 	}
 	return false
+}
+
+func TestOutboundSubscriptionRefreshExposesSkippedLines(t *testing.T) {
+	setupSettingTestDB(t)
+	subID := serveOutboundSubscription(t, "p-", func(int) string {
+		return "vless://u1@1.2.3.4:443?type=ws&security=tls&sni=a.com#ok\nwarp://nope\n"
+	})
+	svc := &OutboundSubscriptionService{}
+	if _, err := svc.Refresh(subID); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	want := []link.Skipped{{Line: "warp://nope", Reason: "unsupported link scheme"}}
+	if got := svc.Skipped(subID); !slices.Equal(got, want) {
+		t.Fatalf("Skipped = %+v, want %+v", got, want)
+	}
+	list, err := svc.List()
+	if err != nil || len(list) != 1 || !slices.Equal(list[0].Skipped, want) {
+		t.Fatalf("List = %+v, %v; want one subscription carrying %+v", list, err, want)
+	}
+}
+
+func TestOutboundSubscriptionFragmentSetsDialerProxy(t *testing.T) {
+	setupSettingTestDB(t)
+	subID := serveOutboundSubscription(t, "p-", func(int) string {
+		return "vless://u1@1.2.3.4:443?type=ws&security=tls&sni=a.com#a\n" +
+			"hysteria2://pw@5.6.7.8:443?sni=a.com#b\n" +
+			"tuic://id:pw@9.9.9.9:443#c\n"
+	})
+	svc := &OutboundSubscriptionService{}
+	if _, err := svc.Refresh(subID); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	dialer := func() map[string]string {
+		obs, err := svc.AllActiveOutbounds()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for _, ob := range obs {
+			m := ob.(map[string]any)
+			stream, _ := m["streamSettings"].(map[string]any)
+			sockopt, _ := stream["sockopt"].(map[string]any)
+			got[m["protocol"].(string)], _ = sockopt["dialerProxy"].(string)
+		}
+		return got
+	}
+	if got := dialer(); got["vless"] != "" {
+		t.Fatalf("dialerProxy set without fragment: %v", got)
+	}
+	if err := database.GetDB().Model(&model.OutboundSubscription{}).Where("id = ?", subID).Update("fragment", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"vless": "jasem-fragment", "hysteria": "", "singbox": ""}
+	if got := dialer(); !maps.Equal(got, want) {
+		t.Fatalf("dialerProxy by protocol = %v, want %v", got, want)
+	}
 }

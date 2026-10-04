@@ -29,49 +29,6 @@ type ParseResult struct {
 	Identity string
 }
 
-// ParseSubscriptionBody accepts the raw body returned by a subscription URL.
-// It handles the common case where the body is a base64-encoded blob of
-// newline-separated links, and also tolerates an already-decoded text body.
-// It returns the list of successfully parsed outbounds (in order) and their
-// corresponding identities.
-func ParseSubscriptionBody(body []byte) ([]Outbound, []string, error) {
-	text := strings.TrimSpace(string(body))
-	if text == "" {
-		return nil, nil, nil
-	}
-
-	// Try base64 decode first (standard and URL-safe variants).
-	if decoded, ok := tryBase64(text); ok {
-		text = strings.TrimSpace(decoded)
-	}
-
-	lines := splitLines(text)
-	var outbounds []Outbound
-	var identities []string
-	seen := map[string]int{}
-
-	for _, ln := range lines {
-		ln = strings.TrimSpace(ln)
-		if ln == "" || strings.HasPrefix(ln, "#") {
-			continue
-		}
-		res, err := ParseLink(ln)
-		if err != nil || res == nil {
-			// Ignore unparseable lines (comments, unsupported protocols, etc.)
-			continue
-		}
-		identity := res.Identity
-		// A repeated identity would share one stored tag, shifting both tags on every refresh.
-		if n := seen[res.Identity]; n > 0 {
-			identity = fmt.Sprintf("%s#%d", res.Identity, n)
-		}
-		seen[res.Identity]++
-		outbounds = append(outbounds, res.Outbound)
-		identities = append(identities, identity)
-	}
-	return outbounds, identities, nil
-}
-
 func tryBase64(s string) (string, bool) {
 	// Remove whitespace that some providers insert.
 	clean := strings.Map(func(r rune) rune {
@@ -105,34 +62,6 @@ func splitLines(s string) []string {
 	// Accept \n, \r\n, and also some providers use literal \n in the text.
 	s = strings.ReplaceAll(s, `\n`, "\n")
 	return strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' })
-}
-
-// ParseLink parses a single share link and returns the outbound object plus
-// a stable identity for tag correlation. Supported schemes:
-//   - vmess://
-//   - vless://
-//   - trojan://
-//   - ss:// (modern and legacy)
-//   - hysteria2:// (also hy2://)
-//   - wireguard:// (also wg://)
-func ParseLink(link string) (*ParseResult, error) {
-	link = strings.TrimSpace(link)
-	switch {
-	case strings.HasPrefix(link, "vmess://"):
-		return parseVmess(link)
-	case strings.HasPrefix(link, "vless://"):
-		return parseVless(link)
-	case strings.HasPrefix(link, "trojan://"):
-		return parseTrojan(link)
-	case strings.HasPrefix(link, "ss://"):
-		return parseShadowsocks(link)
-	case strings.HasPrefix(link, "hysteria2://"), strings.HasPrefix(link, "hy2://"):
-		return parseHysteria2(link)
-	case strings.HasPrefix(link, "wireguard://"), strings.HasPrefix(link, "wg://"):
-		return parseWireguard(link)
-	default:
-		return nil, fmt.Errorf("unsupported link scheme")
-	}
 }
 
 // --- vmess ---
