@@ -133,10 +133,10 @@ func TestBridgeCollidingTagsGetDistinctPorts(t *testing.T) {
 	}
 }
 
-func TestBridgeMissingBinaryDropsOutbounds(t *testing.T) {
+func TestBridgeMissingBinaryBlackholesOutbounds(t *testing.T) {
 	conf := stubSidecar(t, false)
 	got := bridged(t, `{"tag":"direct","protocol":"freedom"}`, sb("tuic-1", "tuic", 443))
-	if len(got) != 1 || got[0]["tag"] != "direct" || *conf != nil {
+	if len(got) != 2 || got[1]["tag"] != "tuic-1" || got[1]["protocol"] != "blackhole" || *conf != nil {
 		t.Fatalf("outbounds %v conf %s", got, *conf)
 	}
 }

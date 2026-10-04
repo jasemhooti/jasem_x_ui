@@ -227,6 +227,11 @@ func Bridge(cfg *xray.Config) error {
 		}
 		_ = json.Unmarshal(raw, &tag)
 		if _, ok := valid[tag.Tag]; !ok {
+			// Keep the tag alive as blackhole so routing rules naming it still load.
+			if tag.Tag != "" {
+				b, _ := json.Marshal(map[string]any{"tag": tag.Tag, "protocol": "blackhole"})
+				out = append(out, b)
+			}
 			continue
 		}
 		b, _ := json.Marshal(replacementFor(tag.Tag, ports[tag.Tag]))
