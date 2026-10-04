@@ -129,7 +129,7 @@ before_show_menu() {
 }
 
 xui_repo="jasemhooti/jasem_x_ui"
-xui_raw_base="https://raw.githubusercontent.com/${xui_repo}/main"
+xui_raw_base="https://raw.githubusercontent.com/${xui_repo}/jasem"
 
 # install_acme installs the acme.sh bundled in the release archive (no get.acme.sh).
 install_acme() {

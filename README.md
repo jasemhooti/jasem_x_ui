@@ -9,7 +9,7 @@ Licensed under GPL-3.0, like upstream.
 English and فارسی (same command; the panel UI defaults to Persian):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/jasemhooti/jasem_x_ui/main/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/jasemhooti/jasem_x_ui/jasem/install.sh)
 ```
 
 After install the menu is `jasem-x-ui`, the service is `jasem_x_ui`, files live in `/usr/local/jasem_x_ui/` (data `/etc/jasem_x_ui/`, logs `/var/log/jasem_x_ui/`). Only Linux amd64 and arm64 are built.
