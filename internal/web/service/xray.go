@@ -17,6 +17,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/jasem"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/singbox"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/json_util"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
@@ -1589,6 +1590,7 @@ func (s *XrayService) StopXray() error {
 	defer lock.Unlock()
 	isManuallyStopped.Store(true)
 	logger.Debug("Attempting to stop Xray...")
+	singbox.Stop()
 	process := currentXrayProcess()
 	if process != nil && process.IsRunning() {
 		return process.Stop()
