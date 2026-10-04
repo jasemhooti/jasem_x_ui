@@ -147,7 +147,7 @@ func MigrateData(srcPath, dstDSN string) error {
 	}
 
 	log.Printf("Migration complete: %d rows across %d tables.", totalRows, len(migrationModels()))
-	log.Println("Set XUI_DB_TYPE=postgres and XUI_DB_DSN=... in /etc/default/x-ui, then restart x-ui.")
+	log.Println("Set XUI_DB_TYPE=postgres and XUI_DB_DSN=... in /etc/default/jasem_x_ui, then restart jasem_x_ui.")
 	return nil
 }
 
